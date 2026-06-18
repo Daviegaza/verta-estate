@@ -1,0 +1,45 @@
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import DeclarativeBase
+from app.core.config import settings
+
+
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=False,  # Use structured logging instead
+    pool_pre_ping=True,
+    pool_size=settings.DATABASE_POOL_SIZE,
+    max_overflow=settings.DATABASE_MAX_OVERFLOW,
+    pool_recycle=settings.DATABASE_POOL_RECYCLE,
+    pool_timeout=30,
+    connect_args={
+        "server_settings": {
+            "application_name": "vestra_api",
+            "timezone": "Africa/Nairobi",
+        }
+    },
+)
+
+AsyncSessionLocal = async_sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            # Expunge all objects before close so FastAPI can serialize
+            # them after the session ends (prevents MissingGreenlet errors)
+            session.expunge_all()
+            await session.close()
+
+
+async def create_tables():
+    async with engine.begin() as conn:
+        from app.models import user, property, document, payment, audit_log, subscription, referral, title_chain, rental  # noqa: F401
+        await conn.run_sync(Base.metadata.create_all)

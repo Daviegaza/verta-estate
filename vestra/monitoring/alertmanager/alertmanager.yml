@@ -1,0 +1,113 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# VESTRA — Alertmanager Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: '${SMTP_HOST}:${SMTP_PORT:-587}'
+  smtp_from: '${SMTP_FROM_EMAIL:-alerts@vestra.co.ke}'
+  smtp_auth_username: '${SMTP_USER:-}'
+  smtp_auth_password: '${SMTP_PASSWORD:-}'
+  smtp_require_tls: true
+
+# Route alerts based on severity
+route:
+  receiver: default
+  group_by: [alertname, severity, category]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # Critical alerts → email + Slack (if configured)
+    - match:
+        severity: critical
+      receiver: critical-alerts
+      repeat_interval: 1h
+      continue: true
+
+    # Performance alerts → grouped notification
+    - match:
+        category: performance
+      receiver: performance-alerts
+      repeat_interval: 2h
+
+    # Business alerts → business team
+    - match:
+        category: business
+      receiver: business-alerts
+
+    # Info alerts → low priority
+    - match:
+        severity: info
+      receiver: info-alerts
+
+# Inhibit rules
+inhibit_rules:
+  - source_match:
+      severity: critical
+      alertname: VestraAPIDown
+    target_match:
+      severity: warning
+    equal: [category]
+
+  - source_match:
+      alertname: VestraDatabaseDown
+    target_match:
+      alertname: VestraAPIDown
+    equal: [category]
+
+receivers:
+  # ── Default (info/warning) ─────────────────────────────────────────────────
+  - name: default
+    email_configs:
+      - to: '${ALERT_EMAIL:-ops@vestra.co.ke}'
+        send_resolved: true
+        headers:
+          Subject: '[Vestra] {{ .GroupLabels.severity | toUpper }}: {{ .GroupLabels.alertname }}'
+
+  # ── Critical Alerts ───────────────────────────────────────────────────────
+  - name: critical-alerts
+    email_configs:
+      - to: '${ALERT_CRITICAL_EMAIL:-oncall@vestra.co.ke}'
+        send_resolved: true
+        headers:
+          Subject: '[Vestra CRITICAL] {{ .GroupLabels.alertname }}'
+    # Uncomment for Slack:
+    # slack_configs:
+    #   - api_url: '${SLACK_WEBHOOK_URL:-}'
+    #     channel: '#vestra-alerts-critical'
+    #     title: '🚨 {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}'
+    #     send_resolved: true
+
+  # ── Performance Alerts ────────────────────────────────────────────────────
+  - name: performance-alerts
+    email_configs:
+      - to: '${ALERT_PERF_EMAIL:-engineering@vestra.co.ke}'
+        send_resolved: true
+        headers:
+          Subject: '[Vestra Performance] {{ .GroupLabels.alertname }}'
+
+  # ── Business Alerts ───────────────────────────────────────────────────────
+  - name: business-alerts
+    email_configs:
+      - to: '${ALERT_BIZ_EMAIL:-product@vestra.co.ke}'
+        send_resolved: true
+        headers:
+          Subject: '[Vestra Business] {{ .GroupLabels.alertname }}'
+
+  # ── Info Alerts ───────────────────────────────────────────────────────────
+  - name: info-alerts
+    email_configs:
+      - to: '${ALERT_EMAIL:-ops@vestra.co.ke}'
+        send_resolved: false
+        headers:
+          Subject: '[Vestra Info] {{ .GroupLabels.alertname }}'
+
+# Alert templates
+templates: []
+
+# Web UI
+web:
+  listen: ':9093'

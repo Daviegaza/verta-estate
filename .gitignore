@@ -1,0 +1,57 @@
+# ── Dependencies ────────────────────────────────────────────────────────────
+node_modules/
+vestra/backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ── Build artifacts ─────────────────────────────────────────────────────────
+vestra/frontend-build/.next/
+dist/
+build/
+
+# ── Environment & secrets ───────────────────────────────────────────────────
+.env
+.env.local
+.env.production
+*.env
+!.env.example
+!.env.production  # template only, no real secrets
+
+# ── IDE ─────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Uploads & data ──────────────────────────────────────────────────────────
+vestra/backend/uploads/*
+!vestra/backend/uploads/.gitkeep
+*.log
+logs/
+
+# ── Docker ──────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Monitoring data ─────────────────────────────────────────────────────────
+vestra/monitoring/prometheus/data/
+vestra/monitoring/grafana/data/
+
+# ── SSL certs ───────────────────────────────────────────────────────────────
+vestra/nginx/ssl/*
+!vestra/nginx/ssl/.gitkeep
+
+# ── Claude ──────────────────────────────────────────────────────────────────
+.claude/
+CLAUDE.md
+AGENTS.md
+
+# ── Temporary ────────────────────────────────────────────────────────────────
+tmp/
+temp/

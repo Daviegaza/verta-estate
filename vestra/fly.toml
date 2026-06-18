@@ -1,0 +1,32 @@
+# Fly.io Deployment Configuration
+# Deploy: fly deploy --config fly.toml
+
+app = "vestra-api"
+primary_region = "nbo"  # Nairobi (closest to Kenyan users)
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[env]
+  ENVIRONMENT = "production"
+  DEBUG = "false"
+  DATABASE_POOL_SIZE = "30"
+  GUNICORN_WORKERS = "4"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    method = "get"
+    path = "/health"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 2

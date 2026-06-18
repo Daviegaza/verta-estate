@@ -1,0 +1,75 @@
+# Render Blueprint — Deploy entire Vestra stack
+# Deploy: Connect repo to render.com — auto-deploys on push
+
+services:
+  # ── Backend API ────────────────────────────────────────────────────────────
+  - type: web
+    name: vestra-api
+    runtime: docker
+    repo: https://github.com/your-org/vestra
+    branch: main
+    rootDir: backend
+    dockerfilePath: backend/Dockerfile
+    plan: standard  # 1GB RAM, 2 CPUs
+    numInstances: 2
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vestra-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: vestra-redis
+          type: redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: BASE_URL
+        value: https://vestra.co.ke
+      - key: CORS_ORIGINS
+        value: https://vestra.co.ke,https://www.vestra.co.ke
+      - key: GUNICORN_WORKERS
+        value: "4"
+      - key: SMTP_HOST
+        sync: false
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_PASSKEY
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+
+  # ── Frontend (web service using standalone Docker build) ──────────────────
+  - type: web
+    name: vestra-frontend
+    runtime: docker
+    repo: https://github.com/your-org/vestra
+    branch: main
+    rootDir: frontend-build
+    dockerfilePath: frontend-build/Dockerfile
+    plan: starter  # 512MB RAM, 1 CPU
+    healthCheckPath: /
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://vestra-api.onrender.com
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  - type: redis
+    name: vestra-redis
+    plan: starter  # 256MB
+    ipAllowList: []
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  - type: postgres
+    name: vestra-db
+    plan: starter  # 1GB storage
+    ipAllowList: []

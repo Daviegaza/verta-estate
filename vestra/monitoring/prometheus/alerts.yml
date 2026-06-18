@@ -1,0 +1,187 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# VESTRA — Prometheus Alert Rules
+# ═══════════════════════════════════════════════════════════════════════════════
+
+groups:
+  - name: vestra_critical
+    interval: 30s
+    rules:
+      # ── Service Availability ──────────────────────────────────────────────
+      - alert: VestraAPIDown
+        expr: up{job="vestra-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Vestra API is DOWN"
+          description: "The Vestra backend API has been unreachable for 2 minutes. Immediate action required."
+          runbook_url: "https://docs.vestra.co.ke/runbooks/api-down"
+
+      - alert: VestraDatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "PostgreSQL database is DOWN"
+          description: "The PostgreSQL database has been unreachable for 1 minute. All services affected."
+          runbook_url: "https://docs.vestra.co.ke/runbooks/database-down"
+
+      - alert: VestraRedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Redis cache is DOWN"
+          description: "Redis has been unreachable for 1 minute. Rate limiting and caching disabled."
+          runbook_url: "https://docs.vestra.co.ke/runbooks/redis-down"
+
+  - name: vestra_performance
+    interval: 30s
+    rules:
+      # ── High Error Rate ──────────────────────────────────────────────────
+      - alert: VestraHighErrorRate
+        expr: |
+          sum(rate(vestra_http_requests_total{status=~"5.."}[5m])) by (endpoint)
+          /
+          sum(rate(vestra_http_requests_total[5m])) by (endpoint)
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: "High API error rate (>5%)"
+          description: "Endpoint {{ $labels.endpoint }} has an error rate of {{ $value | humanizePercentage }} over the last 5 minutes."
+          runbook_url: "https://docs.vestra.co.ke/runbooks/high-error-rate"
+
+      - alert: VestraHigh4xxRate
+        expr: |
+          sum(rate(vestra_http_requests_total{status=~"4.."}[5m])) by (endpoint)
+          /
+          sum(rate(vestra_http_requests_total[5m])) by (endpoint)
+          > 0.25
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Elevated 4xx error rate (>25%)"
+          description: "Endpoint {{ $labels.endpoint }} has a 4xx rate of {{ $value | humanizePercentage }}. Check for client issues or abuse."
+
+      # ── High Latency ─────────────────────────────────────────────────────
+      - alert: VestraHighLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(vestra_http_request_duration_seconds_bucket[5m])) by (le, endpoint)) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High API latency (P95 > 2s)"
+          description: "Endpoint {{ $labels.endpoint }} P95 latency is {{ $value }}s over the last 5 minutes."
+          runbook_url: "https://docs.vestra.co.ke/runbooks/high-latency"
+
+      - alert: VestraCriticalLatency
+        expr: |
+          histogram_quantile(0.95, sum(rate(vestra_http_request_duration_seconds_bucket[5m])) by (le, endpoint)) > 5.0
+        for: 3m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: "Critical API latency (P95 > 5s)"
+          description: "Endpoint {{ $labels.endpoint }} P95 latency is {{ $value }}s. Users experiencing severe delays."
+
+  - name: vestra_resources
+    interval: 30s
+    rules:
+      # ── Database Connection Pool ──────────────────────────────────────────
+      - alert: VestraDBConnectionPoolHigh
+        expr: pg_stat_database_numbackends{datname="vestra"} > 35
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "Database connection pool nearing limit"
+          description: "{{ $value }} active connections to vestra database. Pool max is 40 + 20 overflow."
+
+      # ── Memory Usage ─────────────────────────────────────────────────────
+      - alert: VestraHighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "Host memory usage > 90%"
+          description: "System memory usage is at {{ $value | humanize }}%. Risk of OOM."
+
+      # ── Disk Space ───────────────────────────────────────────────────────
+      - alert: VestraLowDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: critical
+          category: resources
+        annotations:
+          summary: "Low disk space (< 15% free)"
+          description: "Root filesystem has {{ $value | humanize }}% free space remaining."
+
+      # ── Redis Memory ─────────────────────────────────────────────────────
+      - alert: VestraRedisMemoryHigh
+        expr: |
+          (redis_memory_used_bytes / redis_memory_max_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "Redis memory usage > 85%"
+          description: "Redis memory usage is at {{ $value | humanize }}% of max (256MB). Consider eviction policy tuning."
+
+  - name: vestra_business
+    interval: 60s
+    rules:
+      # ── Fraud Spike ──────────────────────────────────────────────────────
+      - alert: VestraHighFraudScores
+        expr: |
+          rate(vestra_fraud_risk_score_bucket{le="80"}[1h]) > 10
+        for: 10m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Spike in high fraud risk scores"
+          description: "More than 10 listings per hour with fraud risk > 80%. Investigate for coordinated fraud campaign."
+
+      # ── Payment Failure Spike ────────────────────────────────────────────
+      - alert: VestraPaymentFailures
+        expr: |
+          sum(rate(vestra_payments_received_total{status="failed"}[15m])) > 5
+        for: 5m
+        labels:
+          severity: critical
+          category: business
+        annotations:
+          summary: "Spike in payment failures"
+          description: "{{ $value }} failed payments in the last 15 minutes. Check M-Pesa / Stripe integration."
+
+      # ── No Verifications ─────────────────────────────────────────────────
+      - alert: VestraNoVerifications
+        expr: |
+          rate(vestra_verifications_run_total[1h]) == 0
+        for: 2h
+        labels:
+          severity: info
+          category: business
+        annotations:
+          summary: "No verifications in 2 hours"
+          description: "Zero property verifications in the last 2 hours. Verify the verification pipeline is functional."

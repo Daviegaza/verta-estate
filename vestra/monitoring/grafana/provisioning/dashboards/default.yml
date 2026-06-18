@@ -1,0 +1,16 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# VESTRA — Grafana Dashboard Provisioning
+# ═══════════════════════════════════════════════════════════════════════════════
+
+apiVersion: 1
+
+providers:
+  - name: Vestra
+    folder: Vestra
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: true

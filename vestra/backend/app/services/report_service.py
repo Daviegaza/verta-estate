@@ -43,15 +43,16 @@ except ImportError:
 
 # ── Brand colors ─────────────────────────────────────────────────────────────────
 
-VESTRA_GREEN = HexColor("#10b981")
-VESTRA_DARK = HexColor("#064e3b")
-VESTRA_GREY = HexColor("#6b7280")
-VESTRA_LIGHT_BG = HexColor("#f9fafb")
-TRUST_HIGH = HexColor("#10b981")
-TRUST_MEDIUM = HexColor("#f59e0b")
-TRUST_LOW = HexColor("#ef4444")
-WHITE = white
-BLACK = black
+if REPORTLAB_AVAILABLE:
+    VESTRA_GREEN = HexColor("#10b981")
+    VESTRA_DARK = HexColor("#064e3b")
+    VESTRA_GREY = HexColor("#6b7280")
+    VESTRA_LIGHT_BG = HexColor("#f9fafb")
+    TRUST_HIGH = HexColor("#10b981")
+    TRUST_MEDIUM = HexColor("#f59e0b")
+    TRUST_LOW = HexColor("#ef4444")
+    WHITE = white
+    BLACK = black
 
 
 async def generate_verification_pdf(

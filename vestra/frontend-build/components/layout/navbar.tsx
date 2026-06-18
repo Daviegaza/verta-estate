@@ -7,8 +7,8 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import {
-  Home, Search, ShieldCheck, BarChart2,
-  User, Menu, X, LogOut, Settings, ChevronDown
+  Home, ShieldCheck, BarChart2,
+  User, Menu, X, LogOut, ChevronDown
 } from 'lucide-react';
 
 export default function Navbar() {

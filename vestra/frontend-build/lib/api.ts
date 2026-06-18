@@ -62,20 +62,37 @@ class VestraAPIClient {
       return config;
     });
 
-    // Response interceptor — handles auth, errors, and retries
+    // Response interceptor — handles expired tokens gracefully
+    // Amazon-style: never force-redirect on public pages. Just clear stale tokens
+    // and let individual page guards handle auth requirements.
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
         if (error.response?.status === 401) {
           if (typeof window !== 'undefined') {
-            const currentPath = window.location.pathname;
-            if (currentPath !== '/auth/login' && currentPath !== '/auth/register') {
-              localStorage.removeItem('vestra_token');
-              localStorage.removeItem('vestra_user');
-              if (!window.location.pathname.startsWith('/auth/')) {
-                window.location.href = '/auth/login';
-              }
+            // Only force-redirect if user is on an explicitly auth-required path
+            // Public pages (/, /market, /verify, etc.) should never redirect
+            const path = window.location.pathname;
+            const isAuthRequiredPath =
+              path.startsWith('/account') ||
+              path.startsWith('/dashboard') ||
+              path.startsWith('/admin') ||
+              path.startsWith('/properties/new') ||
+              path.startsWith('/properties/edit') ||
+              path.startsWith('/properties/my') ||
+              path.startsWith('/messages') ||
+              path.startsWith('/subscription') ||
+              path.startsWith('/agents');
+
+            // Clear stale auth data silently
+            localStorage.removeItem('vestra_token');
+            localStorage.removeItem('vestra_user');
+
+            // Only redirect if AuthGuard would have required login anyway
+            if (isAuthRequiredPath) {
+              window.location.href = '/auth/login?redirect=' + encodeURIComponent(path);
             }
+            // On public pages: just clear token, stay on page, let user browse freely
           }
         }
         return Promise.reject(error);

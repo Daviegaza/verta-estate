@@ -3,7 +3,8 @@
  * Provides offline support, caching, and PWA installability.
  * Works on iOS (Safari), Android (Chrome), and desktop.
  */
-const CACHE_NAME = 'vestra-v2-{{timestamp}}';
+const CACHE_VERSION = 'v3';
+const CACHE_NAME = `vestra-${CACHE_VERSION}-${Date.now()}`;
 const STATIC_ASSETS = [
   '/',
   '/market',
@@ -55,12 +56,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: Cache-first
+  // Static assets: Network-first (chunks already have content hashes for cache busting)
+  // Using network-first prevents stale cached chunks from breaking the app
   if (
     url.pathname.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/) ||
     url.pathname.startsWith('/_next/static/')
   ) {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(networkFirst(request));
     return;
   }
 

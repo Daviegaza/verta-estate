@@ -67,7 +67,7 @@ export default function PropertyDetailPage() {
 
   const handleVerifyNow = async () => {
     if (!isHydrated) return;
-    if (!isAuthenticated) { router.push('/auth/login'); return; }
+    if (!isAuthenticated) { router.push('/auth/login?redirect=' + encodeURIComponent(window.location.pathname)); return; }
     setVerifying(true);
     try {
       const v = await api.runVerificationNow(propertyId);
@@ -420,7 +420,7 @@ export default function PropertyDetailPage() {
                 <>
                   {!showContact ? (
                     <Button fullWidth onClick={() => {
-                      if (!isAuthenticated) { router.push('/auth/login'); return; }
+                      if (!isAuthenticated) { router.push('/auth/login?redirect=' + encodeURIComponent(window.location.pathname)); return; }
                       setShowContact(true);
                     }}>
                       <Phone className="w-4 h-4 mr-2" />

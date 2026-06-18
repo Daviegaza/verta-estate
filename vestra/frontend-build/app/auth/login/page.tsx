@@ -78,7 +78,8 @@ export default function LoginPage() {
       const res = await api.client.post('/api/auth/verify-otp', { phone, code, full_name: fullName || undefined });
       localStorage.setItem('vestra_token', res.data.access_token);
       useAuthStore.setState({ user: res.data.user, token: res.data.access_token, isAuthenticated: true });
-      if (res.data.is_new) { setStep('name'); } else { router.push('/market'); }
+      const params = new URLSearchParams(window.location.search);
+      if (res.data.is_new) { setStep('name'); } else { router.push(params.get('redirect') || '/market'); }
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Invalid code. Try again.');
     } finally { setLoading(false); }

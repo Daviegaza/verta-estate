@@ -12,6 +12,13 @@ export default function ServiceWorkerRegister() {
       return;
     }
 
+    // Only register SW in production — in dev it caches stale chunks
+    if (process.env.NODE_ENV !== 'production') {
+      // Unregister any existing SW from previous sessions
+      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+      return;
+    }
+
     // Register the service worker
     navigator.serviceWorker
       .register('/sw.js', { scope: '/' })

@@ -102,14 +102,14 @@ function DashboardContent() {
               <h1 className="text-3xl lg:text-4xl font-bold text-white mb-2 animate-fade-in-up">
                 {greeting}, <span className="gradient-text">{firstName}</span> 👋
               </h1>
-              <p className="text-emerald-200/80 text-lg animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
+              <p className="text-emerald-100 text-lg animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
                 Here's how your properties are performing today
               </p>
             </div>
             <div className="flex gap-3 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
               <Link href="/verify">
-                <Button size="lg" className="bg-white/10 backdrop-blur border border-white/20 text-white hover:bg-white/20 gap-2">
-                  <ShieldCheck className="w-4 h-4" />
+                <Button size="lg" className="bg-white text-gray-900 hover:bg-gray-100 gap-2 font-semibold shadow-lg">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
                   Verify Property
                 </Button>
               </Link>
@@ -162,7 +162,7 @@ function DashboardContent() {
             <div className="flex items-center justify-between mb-5">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">Your Properties</h2>
-                <p className="text-sm text-gray-500 mt-0.5">Manage and track your listings</p>
+                <p className="text-sm text-gray-600 mt-0.5">Manage and track your listings</p>
               </div>
               <Link href="/properties/new">
                 <Button size="sm" className="gap-1.5">
@@ -256,7 +256,7 @@ function DashboardContent() {
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-gray-900 group-hover:text-emerald-700 transition-colors">{action.label}</p>
-                        <p className="text-xs text-gray-400">{action.desc}</p>
+                        <p className="text-xs text-gray-500">{action.desc}</p>
                       </div>
                       <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all ml-auto flex-shrink-0" />
                     </div>
@@ -274,7 +274,7 @@ function DashboardContent() {
               {payments.length === 0 ? (
                 <div className="text-center py-8 bg-gray-50 rounded-xl">
                   <CreditCard className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                  <p className="text-xs text-gray-400">No payments yet</p>
+                  <p className="text-xs text-gray-500 font-medium">No payments yet</p>
                 </div>
               ) : (
                 <div className="space-y-1">

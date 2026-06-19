@@ -42,6 +42,8 @@ export default function RegisterPage() {
     try {
       const phone = form.phone ? (form.phone.startsWith('+') ? form.phone : '+254' + form.phone.replace(/^0/, '')) : undefined;
       await register({ ...form, phone });
+      // Flag as new user so the onboarding wizard appears after redirect
+      localStorage.setItem('vestra_show_onboarding', 'true');
       const params = new URLSearchParams(window.location.search);
       const redirect = params.get('redirect');
       router.push(redirect || '/dashboard');

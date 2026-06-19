@@ -69,15 +69,36 @@ const HOW_IT_WORKS = [
   { step: '04', title: 'Get Trust Report', desc: 'Receive detailed AI analysis with Trust Score, flags, and recommendation.' },
 ];
 
+const POPULAR_SEARCHES = [
+  '2 bedroom in Westlands under 50k',
+  'Apartments in Kilimani',
+  'Land for sale in Karen',
+  'Houses in Mombasa',
+  'Studio in Nairobi under 20k',
+];
+
 export default function HomePage() {
   const router = useRouter();
   const [aiQuery, setAiQuery] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+
+  const suggestions = aiQuery.trim()
+    ? POPULAR_SEARCHES.filter((s) =>
+        s.toLowerCase().includes(aiQuery.toLowerCase())
+      )
+    : POPULAR_SEARCHES;
 
   const handleAiSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (aiQuery.trim()) {
       router.push('/market?q=' + encodeURIComponent(aiQuery) + '&ai=1');
     }
+  };
+
+  const selectSuggestion = (suggestion: string) => {
+    setAiQuery(suggestion);
+    setIsFocused(false);
+    router.push('/market?q=' + encodeURIComponent(suggestion) + '&ai=1');
   };
 
   return (
@@ -106,13 +127,15 @@ export default function HomePage() {
               Stop losing money to fake listings and property fraud. Vestra AI verifies ownership,
               detects scams, and gives every property a Trust Score before you pay a single shilling.
             </p>
-            <form onSubmit={handleAiSearch} className="mb-8 animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
+            <form onSubmit={handleAiSearch} className="mb-8 animate-fade-in-up relative" style={{ animationDelay: '0.3s' }}>
               <div className="flex gap-2 bg-white/10 backdrop-blur border border-white/20 rounded-2xl p-2">
                 <Search className="w-5 h-5 text-gray-400 ml-2 flex-shrink-0 self-center" />
                 <input
                   type="text"
                   value={aiQuery}
                   onChange={(e) => setAiQuery(e.target.value)}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setTimeout(() => setIsFocused(false), 200)}
                   placeholder="Try: 2 bedroom apartment in Westlands under KES 40,000..."
                   className="flex-1 bg-transparent text-white placeholder:text-gray-400 text-sm outline-none py-2"
                 />
@@ -123,6 +146,30 @@ export default function HomePage() {
                   Search with AI
                 </button>
               </div>
+
+              {/* Search suggestions dropdown */}
+              {isFocused && suggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden z-50 animate-scale-in">
+                  {!aiQuery.trim() && (
+                    <div className="px-4 pt-3 pb-1 text-xs text-gray-400 font-medium uppercase tracking-wider">
+                      Popular searches
+                    </div>
+                  )}
+                  <div className="py-1">
+                    {suggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onMouseDown={() => selectSuggestion(suggestion)}
+                        className="w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                      >
+                        <Search className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">{suggestion}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </form>
             <div className="flex flex-wrap gap-4 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
               <Link href="/market">

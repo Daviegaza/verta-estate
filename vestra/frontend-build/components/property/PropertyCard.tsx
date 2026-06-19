@@ -39,6 +39,16 @@ export function PropertyCardSkeleton() {
 function PropertyCard({ property, className }: PropertyCardProps) {
   const [isLiked, setIsLiked] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [isCompared, setIsCompared] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('vestra_compare');
+        const ids: number[] = stored ? JSON.parse(stored) : [];
+        return ids.includes(property.id);
+      } catch { return false; }
+    }
+    return false;
+  });
 
   const trustScore = property.trust_score ? Math.round(property.trust_score) : null;
   const trustColor = trustScore
@@ -50,6 +60,18 @@ function PropertyCard({ property, className }: PropertyCardProps) {
   const borderAccentColor = trustScore
     ? trustScore >= 80 ? 'border-l-emerald-500' : trustScore >= 60 ? 'border-l-amber-500' : 'border-l-red-500'
     : '';
+
+  const toggleCompare = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const stored = localStorage.getItem('vestra_compare');
+    const ids: number[] = stored ? JSON.parse(stored) : [];
+    const next = isCompared
+      ? ids.filter((id) => id !== property.id)
+      : [...ids, property.id].slice(0, 3);
+    localStorage.setItem('vestra_compare', JSON.stringify(next));
+    setIsCompared(!isCompared);
+  };
 
   // Use local CSS gradient placeholder — instant, no external requests
   const placeholderGradient = 'data:image/svg+xml,' + encodeURIComponent(
@@ -220,8 +242,22 @@ function PropertyCard({ property, className }: PropertyCardProps) {
               {property.views?.toLocaleString() || 0}
             </span>
             <span className="capitalize">{getPropertyTypeLabel(property.property_type)}</span>
+            <button
+              onClick={toggleCompare}
+              className={`ml-auto flex items-center gap-1 px-2 py-1 rounded-lg font-medium transition-all ${
+                isCompared
+                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                  : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'
+              }`}
+              title={isCompared ? 'Remove from comparison' : 'Add to comparison'}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+              </svg>
+              {isCompared ? 'Comparing' : 'Compare'}
+            </button>
             {property.created_at && (
-              <span className="flex items-center gap-1 ml-auto">
+              <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
                 {formatTimeAgo(property.created_at)}
               </span>

@@ -9,7 +9,7 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import type { Payment, PaymentStatus } from '@/types';
 import {
-  Wallet, ArrowDown, ArrowUp, Clock, CheckCircle, XCircle, Filter, Download
+  Wallet, ArrowDown, ArrowUp, Clock, CheckCircle, XCircle, ShieldCheck, Filter, Download
 } from 'lucide-react';
 
 interface PaymentSummary {
@@ -151,11 +151,21 @@ function WalletContent() {
             </div>
             <h3 className="text-xl font-semibold text-gray-700 mb-2">No payments yet</h3>
             <p className="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
-              Your payment history will appear here once you make your first transaction.
+              Your payment history will appear here once you make your first transaction. Start by verifying a property for just KES 500.
             </p>
-            <a href="/subscription">
-              <Button variant="outline">View Subscription Plans</Button>
-            </a>
+            <div className="flex flex-wrap gap-3 justify-center">
+              <a href="/verify">
+                <Button className="gap-2">
+                  <ShieldCheck className="w-4 h-4" />
+                  Verify a Property — KES 500
+                </Button>
+              </a>
+              <a href="/market">
+                <Button variant="outline">
+                  Browse Properties
+                </Button>
+              </a>
+            </div>
           </Card>
         ) : (
           <>

@@ -7,6 +7,8 @@ import Navbar from '@/components/layout/navbar';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, Spinner } from '@/components/ui/card';
 import TrustScoreCard from '@/components/verify/TrustScoreCard';
+import TrustScoreGauge from '@/components/verify/TrustScoreGauge';
+import ShareButtons from '@/components/property/ShareButtons';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/api';
 import type { Property, Verification } from '@/types';
@@ -16,7 +18,7 @@ import {
 } from '@/lib/utils';
 import {
   MapPin, BedDouble, Bath, Maximize, Calendar, Eye,
-  ShieldCheck, Share2, Heart, ChevronLeft, ChevronRight,
+  ShieldCheck, Heart, ChevronLeft, ChevronRight,
   Phone, MessageCircle, AlertCircle, CheckCircle2, Home,
   Zap, Droplets, Wifi, Car, Trees
 } from 'lucide-react';
@@ -89,15 +91,6 @@ export default function PropertyDetailPage() {
       setTimeout(poll, 3000);
     } catch {
       setVerifying(false);
-    }
-  };
-
-  const share = async () => {
-    const url = window.location.href;
-    if (navigator.share) {
-      await navigator.share({ title: property?.title, url });
-    } else {
-      navigator.clipboard.writeText(url);
     }
   };
 
@@ -238,12 +231,7 @@ export default function PropertyDetailPage() {
                   >
                     <Heart className={`w-5 h-5 ${saved ? 'fill-red-400' : ''}`} />
                   </button>
-                  <button
-                    onClick={share}
-                    className="p-2.5 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-600 transition-all"
-                  >
-                    <Share2 className="w-5 h-5" />
-                  </button>
+                  <ShareButtons propertyId={property.id} title={property.title} />
                 </div>
               </div>
 
@@ -258,12 +246,8 @@ export default function PropertyDetailPage() {
                   )}
                 </div>
                 {property.trust_score && (
-                  <div className="ml-auto flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2">
-                    <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                    <div>
-                      <p className="text-xs text-emerald-600 font-medium">Trust Score</p>
-                      <p className="text-xl font-bold text-emerald-700">{Math.round(property.trust_score)}%</p>
-                    </div>
+                  <div className="ml-auto flex items-center gap-3">
+                    <TrustScoreGauge score={property.trust_score} size={80} showLabel={false} />
                   </div>
                 )}
               </div>
@@ -487,10 +471,7 @@ export default function PropertyDetailPage() {
                   <Eye className="w-4 h-4 text-gray-400" />
                   <span className="text-sm text-gray-500">{property.views} views</span>
                 </div>
-                <button onClick={share} className="flex items-center gap-1.5 text-sm text-emerald-600 hover:text-emerald-700 font-medium">
-                  <Share2 className="w-4 h-4" />
-                  Share
-                </button>
+                <ShareButtons propertyId={property.id} title={property.title} />
               </div>
             </Card>
           </div>

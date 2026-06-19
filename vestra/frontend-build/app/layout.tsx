@@ -3,8 +3,10 @@ import './globals.css';
 import { ToastProvider } from '@/components/ui/toaster';
 import AuthInit from '@/components/layout/AuthInit';
 import ErrorBoundary from '@/components/layout/ErrorBoundary';
+import OnboardingWrapper from '@/components/layout/OnboardingWrapper';
 import PWAInstallPrompt from '@/components/layout/PWAInstallPrompt';
 import ServiceWorkerRegister from '@/components/layout/ServiceWorkerRegister';
+import { ThemeProvider } from '@/components/layout/ThemeProvider';
 
 export const metadata: Metadata = {
   title: 'Vestra — Trust Every Property',
@@ -53,7 +55,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning className="light" style={{ colorScheme: 'light' }}>
       <head>
         {/* Apple touch icon */}
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
@@ -75,13 +77,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
         <ErrorBoundary>
-          <AuthInit>
-            <ToastProvider>
-              {children}
-              <PWAInstallPrompt />
-              <ServiceWorkerRegister />
-            </ToastProvider>
-          </AuthInit>
+          <ThemeProvider>
+            <AuthInit>
+              <ToastProvider>
+                <OnboardingWrapper>
+                  {children}
+                </OnboardingWrapper>
+                <PWAInstallPrompt />
+                <ServiceWorkerRegister />
+              </ToastProvider>
+            </AuthInit>
+          </ThemeProvider>
         </ErrorBoundary>
       </body>
     </html>

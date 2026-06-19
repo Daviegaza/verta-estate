@@ -8,7 +8,7 @@ import { Card, Spinner, Badge } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
-import { MessageSquare, ArrowRight, Mail } from 'lucide-react';
+import { MessageSquare, Search, ArrowRight, Mail } from 'lucide-react';
 
 interface Conversation {
   message_id: number;
@@ -111,10 +111,27 @@ function MessagesContent() {
               {loading ? (
                 <div className="flex justify-center py-12"><Spinner /></div>
               ) : conversations.length === 0 ? (
-                <div className="text-center py-12 px-4">
-                  <Mail className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500">No messages yet</p>
-                  <p className="text-xs text-gray-400 mt-1">Messages from buyers and sellers will appear here</p>
+                <div className="text-center py-16 px-4">
+                  <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <Mail className="w-7 h-7 text-emerald-600" />
+                  </div>
+                  <p className="text-base font-semibold text-gray-700 mb-2">No messages yet</p>
+                  <p className="text-xs text-gray-400 mb-6 max-w-xs mx-auto">
+                    Browse properties and reach out to agents or sellers to start a conversation.
+                  </p>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    <Link href="/market">
+                      <Button size="sm" className="gap-1.5">
+                        <Search className="w-3.5 h-3.5" />
+                        Browse Properties
+                      </Button>
+                    </Link>
+                    <Link href="/verify">
+                      <Button size="sm" variant="outline" className="gap-1.5">
+                        Verify a Property
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-50">

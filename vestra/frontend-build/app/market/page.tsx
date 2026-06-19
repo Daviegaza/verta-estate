@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import Navbar from '@/components/layout/navbar';
 import PropertyCard from '@/components/property/PropertyCard';
@@ -11,7 +12,8 @@ import api from '@/lib/api';
 import type { Property, PropertyListResponse } from '@/types';
 import {
   Search, SlidersHorizontal, X, Sparkles, MapPin,
-  Home, Building2, Trees, ChevronLeft, ChevronRight
+  Home, Building2, Trees, ChevronLeft, ChevronRight,
+  LayoutGrid, List, BedDouble, Bath, Maximize, Eye, ShieldCheck, Clock
 } from 'lucide-react';
 import { KENYA_CITIES } from '@/lib/utils';
 
@@ -66,6 +68,25 @@ function MarketContent() {
     bedrooms: undefined as number | undefined,
     verified_only: false,
   });
+
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'map'>('grid');
+  const [compareIds, setCompareIds] = useState<number[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('vestra_compare');
+        return stored ? JSON.parse(stored) : [];
+      } catch { return []; }
+    }
+    return [];
+  });
+
+  const toggleCompare = (id: number) => {
+    setCompareIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      if (typeof window !== 'undefined') localStorage.setItem('vestra_compare', JSON.stringify(next));
+      return next;
+    });
+  };
 
   const fetchProperties = useCallback(async () => {
     setLoading(true);
@@ -274,9 +295,43 @@ function MarketContent() {
         )}
 
         <div className="flex items-center justify-between mb-4">
-          <p className="text-sm text-gray-500">
-            {loading ? 'Searching...' : `${total.toLocaleString()} properties found`}
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-gray-500">
+              {loading ? 'Searching...' : `${total.toLocaleString()} properties found`}
+            </p>
+            {/* View toggle */}
+            {!loading && properties.length > 0 && (
+              <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-1.5 rounded-md text-xs font-medium transition-all ${
+                    viewMode === 'grid' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  title="Grid View"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-1.5 rounded-md text-xs font-medium transition-all ${
+                    viewMode === 'list' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  title="List View"
+                >
+                  <List className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setViewMode('map')}
+                  className={`p-1.5 rounded-md text-xs font-medium transition-all ${
+                    viewMode === 'map' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  title="Map / Browse by City"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
           <p className="text-xs text-gray-400">Page {page} of {pages}</p>
         </div>
 
@@ -293,11 +348,142 @@ function MarketContent() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {properties.map((prop) => (
-                <PropertyCard key={prop.id} property={prop} />
-              ))}
-            </div>
+            {/* Grid View */}
+            {viewMode === 'grid' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {properties.map((prop) => (
+                  <PropertyCard key={prop.id} property={prop} />
+                ))}
+              </div>
+            )}
+
+            {/* List View */}
+            {viewMode === 'list' && (
+              <div className="space-y-2">
+                {properties.map((prop) => (
+                  <Link
+                    key={prop.id}
+                    href={`/properties/${prop.id}`}
+                    className="block group focus:outline-none"
+                  >
+                    <div className="flex items-center gap-4 bg-white rounded-xl border border-gray-100 p-3 hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200">
+                      {/* Thumbnail */}
+                      <div className="w-20 h-20 rounded-lg overflow-hidden bg-gray-50 flex-shrink-0">
+                        <img
+                          src={prop.images?.[0] || `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect fill="#ecfdf5" width="80" height="80"/><text x="40" y="40" text-anchor="middle" dominant-baseline="central" font-size="20">🏠</text></svg>`)}`}
+                          alt={prop.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      </div>
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                            prop.listing_type === 'sale' ? 'bg-blue-100 text-blue-700' : prop.listing_type === 'rent' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {prop.listing_type === 'sale' ? 'For Sale' : prop.listing_type === 'rent' ? 'For Rent' : 'For Lease'}
+                          </span>
+                          {prop.is_verified && (
+                            <span className="text-xs text-emerald-600 font-medium flex items-center gap-0.5">
+                              <ShieldCheck className="w-3 h-3" /> Verified
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="font-semibold text-gray-900 text-sm leading-snug truncate group-hover:text-emerald-700 transition-colors">
+                          {prop.title}
+                        </h3>
+                        <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5">
+                          <MapPin className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{prop.city}, {prop.county}</span>
+                        </div>
+                      </div>
+                      {/* Features */}
+                      <div className="hidden sm:flex items-center gap-3 text-xs text-gray-500 flex-shrink-0">
+                        {prop.bedrooms != null && prop.bedrooms > 0 && (
+                          <span className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg">
+                            <BedDouble className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="font-medium text-gray-700">{prop.bedrooms}</span>
+                          </span>
+                        )}
+                        {prop.bathrooms != null && prop.bathrooms > 0 && (
+                          <span className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg">
+                            <Bath className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="font-medium text-gray-700">{prop.bathrooms}</span>
+                          </span>
+                        )}
+                        {prop.size_sqft != null && prop.size_sqft > 0 && (
+                          <span className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg">
+                            <Maximize className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="font-medium text-gray-700">{prop.size_sqft.toLocaleString()}</span>
+                          </span>
+                        )}
+                      </div>
+                      {/* Price & Trust */}
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-lg font-bold text-gray-900 leading-none">
+                          {prop.currency === 'KES' ? `KES ${prop.price.toLocaleString('en-KE')}` : `$${prop.price.toLocaleString()}`}
+                        </p>
+                        {prop.listing_type === 'rent' && <span className="text-xs text-gray-400">/mo</span>}
+                        {prop.trust_score && (
+                          <div className={`flex items-center justify-end gap-1 mt-1.5 px-2 py-1 rounded-lg text-xs font-bold ${
+                            prop.trust_score >= 80 ? 'bg-emerald-50 text-emerald-600' : prop.trust_score >= 60 ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-500'
+                          }`}>
+                            <ShieldCheck className="w-3 h-3" />
+                            {Math.round(prop.trust_score)}
+                          </div>
+                        )}
+                      </div>
+                      {/* Compare checkbox */}
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleCompare(prop.id); }}
+                        className={`flex-shrink-0 p-2 rounded-lg border transition-all ${
+                          compareIds.includes(prop.id)
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-600'
+                            : 'border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300'
+                        }`}
+                        title={compareIds.includes(prop.id) ? 'Remove from compare' : 'Add to compare'}
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {/* Map / Browse by City View */}
+            {viewMode === 'map' && (
+              <div className="space-y-8">
+                {(() => {
+                  const grouped: Record<string, typeof properties> = {};
+                  properties.forEach((p) => {
+                    const city = p.city || 'Other';
+                    if (!grouped[city]) grouped[city] = [];
+                    grouped[city].push(p);
+                  });
+                  const cityOrder = ['Nairobi', 'Mombasa', 'Kisumu', 'Nakuru', 'Eldoret', ...Object.keys(grouped).filter(c => !['Nairobi', 'Mombasa', 'Kisumu', 'Nakuru', 'Eldoret'].includes(c))];
+                  const sortedCities = [...new Set([...cityOrder, ...Object.keys(grouped)])].filter(c => grouped[c]);
+                  return sortedCities.map((city) => (
+                    <div key={city}>
+                      <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-200">
+                        <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
+                          <MapPin className="w-4 h-4 text-emerald-600" />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-900">{city}</h3>
+                        <span className="text-sm text-gray-400 font-medium">({grouped[city].length} properties)</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {grouped[city].map((prop) => (
+                          <PropertyCard key={prop.id} property={prop} />
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            )}
 
             {/* Pagination */}
             {pages > 1 && (
@@ -330,6 +516,21 @@ function MarketContent() {
               </div>
             )}
           </>
+        )}
+
+        {/* Floating Compare Button */}
+        {compareIds.length > 0 && (
+          <div className="fixed bottom-6 right-6 z-50">
+            <Link
+              href={`/properties/compare?ids=${compareIds.join(',')}`}
+              className="flex items-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-2xl shadow-xl hover:bg-emerald-700 hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-200 font-semibold text-sm"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+              </svg>
+              Compare ({compareIds.length})
+            </Link>
+          </div>
         )}
       </div>
     </div>

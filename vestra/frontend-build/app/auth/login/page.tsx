@@ -79,7 +79,13 @@ export default function LoginPage() {
       localStorage.setItem('vestra_token', res.data.access_token);
       useAuthStore.setState({ user: res.data.user, token: res.data.access_token, isAuthenticated: true });
       const params = new URLSearchParams(window.location.search);
-      if (res.data.is_new) { setStep('name'); } else { router.push(params.get('redirect') || '/market'); }
+      if (res.data.is_new) {
+        // Flag as new user so the onboarding wizard appears after redirect
+        localStorage.setItem('vestra_show_onboarding', 'true');
+        setStep('name');
+      } else {
+        router.push(params.get('redirect') || '/market');
+      }
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Invalid code. Try again.');
     } finally { setLoading(false); }

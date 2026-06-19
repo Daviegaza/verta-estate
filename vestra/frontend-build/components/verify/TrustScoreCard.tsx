@@ -2,6 +2,7 @@
 
 import { cn, getTrustScoreColor, getTrustScoreBg } from '@/lib/utils';
 import { Progress } from '@/components/ui/card';
+import TrustScoreGauge from '@/components/verify/TrustScoreGauge';
 import { ShieldCheck, ShieldAlert, ShieldX, Shield } from 'lucide-react';
 import type { Verification } from '@/types';
 
@@ -61,11 +62,8 @@ export default function TrustScoreCard({ verification, compact = false }: TrustS
               </p>
             </div>
           </div>
-          <div className="text-right">
-            <p className={cn('text-3xl font-bold', getTrustScoreColor(score))}>
-              {Math.round(score)}
-            </p>
-            <p className="text-xs text-gray-600 font-medium">Trust Score</p>
+          <div className="flex-shrink-0">
+            <TrustScoreGauge score={score} size={80} showLabel={true} />
           </div>
         </div>
       </div>

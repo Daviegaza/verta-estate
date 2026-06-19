@@ -176,15 +176,15 @@ export default function VerifyPage() {
               const isDone = currentStepIndex > sIdx;
               return (
                 <div key={s.key} className="flex items-center flex-shrink-0">
-                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                    isActive ? 'bg-emerald-600 text-white' :
-                    isDone ? 'bg-emerald-100 text-emerald-700' :
-                    'bg-gray-100 text-gray-400'
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all shadow-sm ${
+                    isActive ? 'bg-emerald-600 text-white shadow-emerald-200' :
+                    isDone ? 'bg-emerald-100 text-emerald-800' :
+                    'bg-gray-200 text-gray-700'
                   }`}>
                     {isDone ? <CheckCircle2 className="w-3.5 h-3.5" /> : s.icon}
                     {s.label}
                   </div>
-                  {i < STEPS.length - 1 && <ChevronRight className="w-4 h-4 text-gray-300 mx-1" />}
+                  {i < STEPS.length - 1 && <ChevronRight className="w-3.5 h-3.5 text-gray-400 mx-0.5" />}
                 </div>
               );
             })}
@@ -230,10 +230,10 @@ export default function VerifyPage() {
               Upload any available documents (title deed, agreement, etc.). More documents = higher accuracy.
             </p>
 
-            <div className="border-2 border-dashed border-gray-200 rounded-2xl p-8 text-center hover:border-emerald-400 transition-colors">
-              <Upload className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-600 font-medium mb-1">Drag & drop or click to upload</p>
-              <p className="text-xs text-gray-400 mb-4">PDF, JPG, PNG — Max 10MB</p>
+            <div className="border-2 border-dashed border-gray-300 rounded-2xl p-8 text-center hover:border-emerald-400 transition-colors bg-gray-50">
+              <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+              <p className="text-gray-700 font-medium mb-1">Drag & drop or click to upload</p>
+              <p className="text-xs text-gray-500 mb-4">PDF, JPG, PNG — Max 10MB</p>
               <label className="cursor-pointer">
                 <span className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors">
                   {loading ? 'Uploading...' : 'Choose File'}

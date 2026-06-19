@@ -55,8 +55,8 @@ export default function TrustScoreCard({ verification, compact = false }: TrustS
           <div className="flex items-center gap-3">
             {getStatusIcon()}
             <div>
-              <h3 className="font-semibold text-gray-900">AI Verification Report</h3>
-              <p className="text-xs text-gray-500 capitalize">
+              <h3 className="font-semibold text-gray-900 text-lg">AI Verification Report</h3>
+              <p className="text-xs text-gray-600 capitalize">
                 Status: <strong>{verification.status.replace('_', ' ')}</strong>
               </p>
             </div>
@@ -65,7 +65,7 @@ export default function TrustScoreCard({ verification, compact = false }: TrustS
             <p className={cn('text-3xl font-bold', getTrustScoreColor(score))}>
               {Math.round(score)}
             </p>
-            <p className="text-xs text-gray-500">Trust Score</p>
+            <p className="text-xs text-gray-600 font-medium">Trust Score</p>
           </div>
         </div>
       </div>
@@ -74,14 +74,14 @@ export default function TrustScoreCard({ verification, compact = false }: TrustS
         {/* Score bars */}
         <div className="space-y-3">
           <div>
-            <div className="flex justify-between text-xs text-gray-600 mb-1">
+            <div className="flex justify-between text-xs text-gray-700 mb-1 font-medium">
               <span>Trust Score</span>
-              <span className={cn('font-semibold', getTrustScoreColor(score))}>{Math.round(score)}%</span>
+              <span className={cn('font-bold', getTrustScoreColor(score))}>{Math.round(score)}%</span>
             </div>
             <Progress value={score} size="md" />
           </div>
           <div>
-            <div className="flex justify-between text-xs text-gray-600 mb-1">
+            <div className="flex justify-between text-xs text-gray-700 mb-1 font-medium">
               <span>Fraud Risk</span>
               <span className={cn('font-semibold', riskScore > 60 ? 'text-red-600' : riskScore > 30 ? 'text-amber-600' : 'text-emerald-600')}>
                 {Math.round(riskScore)}%
@@ -98,9 +98,9 @@ export default function TrustScoreCard({ verification, compact = false }: TrustS
             { label: 'Ownership', value: verification.ownership_confidence || '—', colors: { high: 'text-emerald-600', medium: 'text-amber-600', low: 'text-red-500' } },
             { label: 'Decision', value: verification.ai_recommendation || '—', colors: { approve: 'text-emerald-600', review: 'text-amber-600', reject: 'text-red-500' } },
           ].map(({ label, value, colors }) => (
-            <div key={label} className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-xs text-gray-500 mb-1">{label}</p>
-              <p className={cn('text-sm font-semibold capitalize', (colors as unknown as Record<string, string>)[value] || 'text-gray-700')}>
+            <div key={label} className="bg-gray-100 rounded-xl p-3 text-center border border-gray-200">
+              <p className="text-xs text-gray-600 mb-1 font-medium">{label}</p>
+              <p className={cn('text-sm font-bold capitalize', (colors as unknown as Record<string, string>)[value] || 'text-gray-900')}>
                 {value}
               </p>
             </div>

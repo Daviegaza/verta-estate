@@ -86,21 +86,27 @@ export default function HomePage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden bg-gradient-to-br from-gray-950 via-gray-900 to-emerald-950 text-white">
+        {/* Floating background decorations */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-20 -right-20 w-72 h-72 bg-emerald-500/5 rounded-full blur-3xl animate-float" />
+          <div className="absolute top-1/3 -left-20 w-96 h-96 bg-emerald-400/5 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }} />
+          <div className="absolute bottom-10 right-1/4 w-48 h-48 bg-emerald-300/5 rounded-full blur-3xl animate-float" style={{ animationDelay: '4s' }} />
+        </div>
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-24 lg:py-32">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/30 rounded-full px-4 py-1.5 mb-6">
+            <div className="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/30 rounded-full px-4 py-1.5 mb-6 animate-fade-in-down">
               <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
               <span className="text-emerald-300 text-sm font-medium">Africa Number 1 Trusted Property Platform</span>
             </div>
-            <h1 className="text-5xl lg:text-7xl font-bold leading-tight mb-6">
+            <h1 className="text-5xl lg:text-7xl font-bold leading-tight mb-6 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
               Trust Every
               <span className="text-emerald-400"> Property.</span>
             </h1>
-            <p className="text-xl text-gray-300 leading-relaxed mb-10 max-w-2xl">
+            <p className="text-xl text-gray-300 leading-relaxed mb-10 max-w-2xl animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
               Stop losing money to fake listings and property fraud. Vestra AI verifies ownership,
               detects scams, and gives every property a Trust Score before you pay a single shilling.
             </p>
-            <form onSubmit={handleAiSearch} className="mb-8">
+            <form onSubmit={handleAiSearch} className="mb-8 animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
               <div className="flex gap-2 bg-white/10 backdrop-blur border border-white/20 rounded-2xl p-2">
                 <Search className="w-5 h-5 text-gray-400 ml-2 flex-shrink-0 self-center" />
                 <input
@@ -118,7 +124,7 @@ export default function HomePage() {
                 </button>
               </div>
             </form>
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-wrap gap-4 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
               <Link href="/market">
                 <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 gap-2">
                   Browse Properties
@@ -139,10 +145,10 @@ export default function HomePage() {
       {/* Stats */}
       <section className="bg-gray-50 border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 stagger-fade-in">
             {STATS.map((stat) => (
               <div key={stat.label} className="text-center">
-                <p className="text-4xl font-bold text-gray-900">{stat.value}</p>
+                <p className="text-4xl font-bold text-gray-900"><span className="count-up">{stat.value}</span></p>
                 <p className="text-sm text-gray-500 mt-1">{stat.label}</p>
               </div>
             ))}
@@ -153,10 +159,10 @@ export default function HomePage() {
       {/* Features */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 py-24">
         <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold text-gray-900 mb-4">Everything you need to trust property</h2>
+          <h2 className="text-4xl font-bold text-gray-900 mb-4">Why Kenyans Trust Vestra</h2>
           <p className="text-xl text-gray-500 max-w-2xl mx-auto">Built for Kenya. Designed for Africa. Ready for the world.</p>
         </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 stagger-fade-in">
           {FEATURES.map((feature) => {
             const IconComponent = {
               shield: ShieldCheck,
@@ -186,7 +192,7 @@ export default function HomePage() {
             <h2 className="text-4xl font-bold text-gray-900 mb-4">How Vestra Verify Works</h2>
             <p className="text-gray-500">Get a full property trust report in under 5 minutes</p>
           </div>
-          <div className="grid md:grid-cols-4 gap-6">
+          <div className="grid md:grid-cols-4 gap-6 stagger-fade-in">
             {HOW_IT_WORKS.map((item) => (
               <div key={item.step} className="bg-white rounded-2xl border border-gray-100 p-6">
                 <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center mb-4">
@@ -206,7 +212,7 @@ export default function HomePage() {
           <h2 className="text-4xl font-bold text-gray-900 mb-4">Trusted by Kenyans</h2>
           <p className="text-gray-500">Real people. Real properties. Real peace of mind.</p>
         </div>
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-3 gap-6 stagger-fade-in">
           {TESTIMONIALS.map((t) => (
             <div key={t.name} className="bg-white rounded-2xl border border-gray-100 p-6 hover:shadow-md transition-shadow">
               <div className="flex gap-1 mb-4">
@@ -230,22 +236,14 @@ export default function HomePage() {
       </section>
 
       {/* CTA */}
-      <section className="bg-emerald-600 py-20">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center">
-          <h2 className="text-4xl font-bold text-white mb-4">Start trusting property today</h2>
-          <p className="text-emerald-100 text-lg mb-10">Join thousands of Kenyans who verify before they buy, rent, or invest.</p>
-          <div className="flex flex-wrap gap-4 justify-center">
-            <Link href="/auth/login">
-              <Button size="lg" className="bg-white text-emerald-700 hover:bg-gray-50 gap-2">
-                <Smartphone className="w-5 h-5" />
-                Sign In with Phone <ArrowRight className="w-5 h-5" />
-              </Button>
-            </Link>
-            <Link href="/verify">
-              <Button size="lg" variant="outline" className="border-white/50 text-white hover:bg-white/10 hover:text-white">
-                Verify a Property - KES 500
-              </Button>
-            </Link>
+      <section className="relative overflow-hidden bg-gradient-to-br from-emerald-600 to-emerald-800 py-20">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjYwIiBoZWlnaHQ9IjYwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDYwIDAgTCAwIDAgMCA2MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-10" />
+        <div className="relative max-w-4xl mx-auto text-center px-4">
+          <h2 className="text-4xl font-bold text-white mb-4">Ready to Trust Every Property?</h2>
+          <p className="text-emerald-100 text-lg mb-8">Join 50,000+ Kenyans using Vestra to buy, sell, and rent with confidence.</p>
+          <div className="flex gap-4 justify-center">
+            <Link href="/auth/register"><Button size="lg" className="bg-white text-emerald-700 hover:bg-emerald-50 font-semibold">Get Started Free</Button></Link>
+            <Link href="/verify"><Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10">Verify Property</Button></Link>
           </div>
         </div>
       </section>

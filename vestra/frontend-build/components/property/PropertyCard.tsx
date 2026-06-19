@@ -47,6 +47,9 @@ function PropertyCard({ property, className }: PropertyCardProps) {
   const trustBg = trustScore
     ? trustScore >= 80 ? 'bg-emerald-50' : trustScore >= 60 ? 'bg-amber-50' : 'bg-red-50'
     : 'bg-gray-50';
+  const borderAccentColor = trustScore
+    ? trustScore >= 80 ? 'border-l-emerald-500' : trustScore >= 60 ? 'border-l-amber-500' : 'border-l-red-500'
+    : '';
 
   // Use local CSS gradient placeholder — instant, no external requests
   const placeholderGradient = 'data:image/svg+xml,' + encodeURIComponent(
@@ -67,7 +70,10 @@ function PropertyCard({ property, className }: PropertyCardProps) {
       href={`/properties/${property.id}`}
       className={cn('group block focus:outline-none', className)}
     >
-      <article className="bg-white rounded-2xl border border-gray-100 shadow-card hover:shadow-card-hover hover:-translate-y-1 transition-all duration-300 overflow-hidden">
+      <article className={cn(
+        'bg-white rounded-2xl border border-gray-100 shadow-card hover:shadow-card-hover hover:-translate-y-1 transition-all duration-300 overflow-hidden hover-card',
+        borderAccentColor && `border-l-2 ${borderAccentColor}`
+      )}>
         {/* Image Section */}
         <div className="relative h-52 bg-gray-50 overflow-hidden">
           {!imageLoaded && (

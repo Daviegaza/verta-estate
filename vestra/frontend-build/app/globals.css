@@ -118,6 +118,12 @@ body {
   100% { transform: translateX(100%); }
 }
 
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-3px); }
+  20%, 40%, 60%, 80% { transform: translateX(3px); }
+}
+
 /* ── Animation Utility Classes ────────────────────────────────────── */
 .animate-fade-in { animation: fade-in 0.3s ease-out both; }
 .animate-fade-in-up { animation: fade-in-up 0.4s ease-out both; }
@@ -126,6 +132,7 @@ body {
 .animate-fade-in-right { animation: fade-in-right 0.4s ease-out both; }
 .animate-scale-in { animation: scale-in 0.3s ease-out both; }
 .animate-scale-in-center { animation: scale-in-center 0.3s ease-out both; }
+.animate-shake { animation: shake 0.4s ease-in-out both; }
 
 .animate-in { animation-duration: 200ms; animation-fill-mode: both; }
 .slide-in-from-right-5 { animation-name: slide-in-from-right-5; }

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,12 @@ export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', onScroll);
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -34,11 +40,11 @@ export default function Navbar() {
   ];
 
   return (
-    <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-100 shadow-sm">
+    <nav className={cn('sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-gray-100 transition-all duration-300', scrolled && 'glass shadow-sm')}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 flex-shrink-0">
+          <Link href="/" className="flex items-center gap-2 flex-shrink-0 transition-transform duration-200 hover:scale-105">
             <div className="w-8 h-8 bg-emerald-600 rounded-xl flex items-center justify-center shadow-sm">
               <span className="text-white font-bold text-sm">V</span>
             </div>
@@ -52,7 +58,7 @@ export default function Navbar() {
                 key={link.href}
                 href={link.href}
                 className={cn(
-                  'flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all',
+                  'flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all nav-indicator',
                   pathname.startsWith(link.href)
                     ? 'bg-emerald-50 text-emerald-700'
                     : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'

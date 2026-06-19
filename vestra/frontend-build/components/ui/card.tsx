@@ -14,7 +14,7 @@ export function Card({ className, hover = false, padding = 'md', children, ...pr
     <div
       className={cn(
         'bg-white rounded-2xl border border-gray-100 shadow-sm',
-        hover && 'hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer',
+        hover && 'hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 hover-card cursor-pointer',
         paddings[padding],
         className
       )}
@@ -111,7 +111,7 @@ export function StatCard({ label, value, subtext, icon, color = 'emerald', trend
           <p className="text-3xl font-bold text-gray-900 mt-1.5 tracking-tight">{value}</p>
           {subtext && <p className="text-xs text-gray-400 mt-1">{subtext}</p>}
           {trend && (
-            <p className={cn('text-xs font-semibold mt-1.5 flex items-center gap-1', isPositive ? 'text-emerald-600' : 'text-red-500')}>
+            <p className={cn('text-xs font-semibold mt-1.5 flex items-center gap-1 animate-fade-in', isPositive ? 'text-emerald-600' : 'text-red-500')}>
               <span className="text-sm">{isPositive ? '↑' : '↓'}</span>
               {Math.abs(trend.value)}{typeof trend.value === 'number' && !trend.label?.includes('%') ? '%' : ''} {trend.label}
             </p>

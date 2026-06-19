@@ -22,11 +22,6 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: '*.fly.dev' },
     ],
   },
-  modularizeImports: {
-    'lucide-react': {
-      transform: 'lucide-react/dist/esm/icons/{{member}}',
-    },
-  },
   async rewrites() {
     return [
       {

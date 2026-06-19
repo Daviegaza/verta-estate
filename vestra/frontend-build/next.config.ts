@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // React Compiler — automatic memoization for free perf (Next.js 16 stable)
+  reactCompiler: true,
+  // Turbopack filesystem cache — faster dev restarts (beta, Next.js 16)
+  experimental: {
+    turbopackFileSystemCacheForDev: true,
+  },
   images: {
     // Use unoptimized for data URIs and local images — faster
     unoptimized: process.env.NODE_ENV === 'development',

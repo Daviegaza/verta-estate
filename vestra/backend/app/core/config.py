@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     # ── App ──────────────────────────────────────────────────────────────────
     APP_NAME: str = "Vestra"
-    APP_VERSION: str = "2.0.0"
+    APP_VERSION: str = "3.0.0"
     BASE_URL: str = "http://localhost:3000"  # Public-facing URL for links in emails etc.
     DEBUG: bool = False
     ENVIRONMENT: str = "development"  # development | staging | production

@@ -550,6 +550,130 @@ class VestraAPIClient {
       return res.data;
     });
   }
+
+  // ─── Escrow ────────────────────────────────────────────────────────────────
+
+  async createEscrow(data: {
+    property_id: number; amount_kes: number; seller_id: number;
+    agent_id?: number; deposit_amount_kes?: number; terms?: string;
+  }): Promise<any> {
+    const res = await this.client.post('/api/escrow', null, { params: data });
+    return res.data;
+  }
+
+  async getMyEscrows(limit = 20): Promise<{ items: any[] }> {
+    return withRetry(async () => {
+      const res = await this.client.get<{ items: any[] }>('/api/escrow/my', { params: { limit } });
+      return res.data;
+    });
+  }
+
+  async getEscrow(escrowId: number): Promise<any> {
+    return withRetry(async () => {
+      const res = await this.client.get<any>(`/api/escrow/${escrowId}`);
+      return res.data;
+    });
+  }
+
+  // ─── Disputes ──────────────────────────────────────────────────────────────
+
+  async fileDispute(data: {
+    category: string; description: string; property_id?: number;
+    subject_type?: string; subject_id?: number; evidence_urls?: string;
+  }): Promise<any> {
+    const res = await this.client.post('/api/disputes', null, { params: data });
+    return res.data;
+  }
+
+  async getDisputeCategories(): Promise<{ categories: string[] }> {
+    const res = await this.client.get<{ categories: string[] }>('/api/disputes/categories');
+    return res.data;
+  }
+
+  async getMyDisputes(limit = 50): Promise<{ items: any[] }> {
+    return withRetry(async () => {
+      const res = await this.client.get<{ items: any[] }>('/api/disputes/my', { params: { limit } });
+      return res.data;
+    });
+  }
+
+  async getDispute(disputeId: number): Promise<any> {
+    const res = await this.client.get<any>(`/api/disputes/${disputeId}`);
+    return res.data;
+  }
+
+  // ─── Reviews ───────────────────────────────────────────────────────────────
+
+  async writeReview(data: {
+    subject_id: number; rating: number; title?: string;
+    body?: string; property_id?: number;
+  }): Promise<any> {
+    const res = await this.client.post('/api/reviews', null, { params: data });
+    return res.data;
+  }
+
+  async getSubjectReviews(subjectId: number, limit = 20): Promise<any> {
+    return withRetry(async () => {
+      const res = await this.client.get<any>(`/api/reviews/subject/${subjectId}`, { params: { limit } });
+      return res.data;
+    });
+  }
+
+  async getMyReviews(limit = 20): Promise<{ items: any[] }> {
+    return withRetry(async () => {
+      const res = await this.client.get<{ items: any[] }>('/api/reviews/my', { params: { limit } });
+      return res.data;
+    });
+  }
+
+  async getPropertyReviewStats(propertyId: number): Promise<any> {
+    const res = await this.client.get<any>(`/api/reviews/property/${propertyId}`);
+    return res.data;
+  }
+
+  async getTopAgents(limit = 10, minReviews = 3): Promise<any> {
+    const res = await this.client.get<any>('/api/reviews/top-agents', { params: { limit, min_reviews: minReviews } });
+    return res.data;
+  }
+
+  // ─── Payouts ───────────────────────────────────────────────────────────────
+
+  async requestPayout(amountKes: number, payoutType = 'commission', description?: string): Promise<any> {
+    const res = await this.client.post('/api/payouts/request', null, {
+      params: { amount_kes: amountKes, payout_type: payoutType, description },
+    });
+    return res.data;
+  }
+
+  async getMyPayouts(limit = 50): Promise<{ items: any[] }> {
+    return withRetry(async () => {
+      const res = await this.client.get<{ items: any[] }>('/api/payouts/my', { params: { limit } });
+      return res.data;
+    });
+  }
+
+  // ─── KYC ───────────────────────────────────────────────────────────────────
+
+  async getKycStatus(): Promise<any> {
+    return withRetry(async () => {
+      const res = await this.client.get('/api/kyc/status');
+      return res.data;
+    });
+  }
+
+  async submitKyc(formData: FormData): Promise<any> {
+    const res = await this.client.post('/api/kyc/submit', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  }
+
+  // ─── Coupons ────────────────────────────────────────────────────────────────
+
+  async validateCoupon(code: string): Promise<any> {
+    const res = await this.client.get('/api/admin/coupons/validate', { params: { code } });
+    return res.data;
+  }
 }
 
 export const api = new VestraAPIClient();

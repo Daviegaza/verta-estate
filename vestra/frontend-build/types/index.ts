@@ -203,3 +203,172 @@ export interface AISearchResult {
   pages: number;
   size: number;
 }
+
+// Escrow types
+export type EscrowStatus = 'initiated' | 'deposit_paid' | 'balance_paid' | 'completed' | 'cancelled' | 'refunded' | 'disputed';
+
+export interface EscrowTransaction {
+  id: number;
+  property_id: number;
+  buyer_id: number;
+  seller_id: number;
+  agent_id?: number;
+  amount_kes: number;
+  deposit_amount_kes?: number;
+  status: EscrowStatus;
+  payment_reference?: string;
+  release_condition_met: boolean;
+  completion_date?: string;
+  terms?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+// Dispute types
+export type DisputeStatus = 'open' | 'investigating' | 'resolved' | 'closed';
+
+export interface Dispute {
+  id: number;
+  reporter_id: number;
+  property_id?: number;
+  subject_type?: string;
+  subject_id?: number;
+  category: string;
+  description: string;
+  evidence_urls: string[];
+  status: DisputeStatus;
+  resolution?: string;
+  resolved_by_id?: number;
+  resolved_at?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+// Review types
+export interface Review {
+  id: number;
+  reviewer_id: number;
+  subject_id: number;
+  property_id?: number;
+  rating: number;
+  title?: string;
+  body?: string;
+  is_verified_transaction: boolean;
+  created_at: string;
+}
+
+export interface SubjectReviews {
+  subject_id: number;
+  total_reviews: number;
+  average_rating: number;
+  positive_pct: number;
+  reviews: Review[];
+}
+
+// Payout types
+export type PayoutStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface Payout {
+  id: number;
+  user_id: number;
+  amount_kes: number;
+  payout_type: string;
+  status: PayoutStatus;
+  mpesa_receipt?: string;
+  reference_id?: number;
+  reference_type?: string;
+  description?: string;
+  failure_reason?: string;
+  processed_at?: string;
+  completed_at?: string;
+  created_at: string;
+}
+
+// KYC types
+export type KYCStatus = 'not_submitted' | 'pending' | 'approved' | 'rejected';
+
+export interface KYCVerification {
+  id: number;
+  user_id: number;
+  status: KYCStatus;
+  id_type: string;
+  id_number?: string;
+  rejection_reason?: string;
+  reviewed_by_id?: number;
+  reviewed_at?: string;
+  created_at: string;
+}
+
+// Subscription types
+export interface SubscriptionPlan {
+  tier: string;
+  price: number;
+  features: string[];
+  max_listings: number;
+  badge?: string;
+}
+
+export interface UserSubscription {
+  id: number;
+  user_id: number;
+  tier: string;
+  status: string;
+  amount_kes: number;
+  auto_renew: boolean;
+  current_period_end?: string;
+  grace_period_end?: string;
+  renewal_failures: number;
+}
+
+// Enterprise types
+export interface APIKeyInfo {
+  id: number;
+  name: string;
+  prefix: string;
+  scopes: string[];
+  is_active: boolean;
+  rate_limit_per_min: number;
+  last_used_at?: string;
+  expires_at?: string;
+  created_at: string;
+}
+
+export interface WebhookInfo {
+  id: number;
+  url: string;
+  events: string[];
+  is_active: boolean;
+  failures: number;
+  last_success?: string;
+}
+
+// Notification types
+export interface Notification {
+  id: number;
+  user_id: number;
+  type: string;
+  title: string;
+  body: string;
+  is_read: boolean;
+  action_url?: string;
+  created_at: string;
+}
+
+// Message types
+export interface Conversation {
+  other_user_id: number;
+  other_user_name: string;
+  other_user_avatar?: string;
+  last_message: string;
+  last_message_at: string;
+  unread_count: number;
+}
+
+export interface Message {
+  id: number;
+  sender_id: number;
+  receiver_id: number;
+  body: string;
+  is_read: boolean;
+  created_at: string;
+}

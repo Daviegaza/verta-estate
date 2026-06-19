@@ -13,6 +13,11 @@ from app.api.routes.otp_auth import router as otp_auth_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.enterprise import router as enterprise_router
 from app.api.routes.monitoring import router as monitoring_router
+from app.api.routes.escrow import router as escrow_router
+from app.api.routes.disputes import router as disputes_router
+from app.api.routes.reviews import router as reviews_router
+from app.api.routes.payouts import router as payouts_router
+from app.api.routes.coupons import router as coupons_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth.router)  # Keep legacy email auth
@@ -33,3 +38,8 @@ api_router.include_router(favorites_router)
 api_router.include_router(reports_router)
 api_router.include_router(enterprise_router)
 api_router.include_router(monitoring_router)
+api_router.include_router(escrow_router)
+api_router.include_router(disputes_router)
+api_router.include_router(reviews_router)
+api_router.include_router(payouts_router)
+api_router.include_router(coupons_router)

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/api';
 import type { User } from '@/types';
-import { User, Camera, Save, Mail, Phone, MapPin } from 'lucide-react';
+import { User as UserIcon, Camera, Save, Mail, Phone, MapPin } from 'lucide-react';
 
 export default function SettingsPage() {
   return (
@@ -107,7 +107,7 @@ function SettingsContent() {
         {/* Page Header */}
         <div className="flex items-center gap-4 mb-10">
           <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center flex-shrink-0">
-            <User className="w-7 h-7 text-emerald-600" />
+            <UserIcon className="w-7 h-7 text-emerald-600" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Account Settings</h1>
@@ -168,7 +168,7 @@ function SettingsContent() {
                 value={form.full_name}
                 onChange={handleChange('full_name')}
                 placeholder="Enter your full name"
-                leftElement={<User className="w-4 h-4" />}
+                leftElement={<UserIcon className="w-4 h-4" />}
               />
 
               {/* Email (read-only) */}

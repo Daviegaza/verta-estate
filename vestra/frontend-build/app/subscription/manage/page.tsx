@@ -29,7 +29,7 @@ interface SubscriptionData {
     cancelled_at?: string;
   } | null;
   listing_limit: number;
-  listings_this_month: number;
+  listings_this_month?: number;
   role: string;
 }
 

@@ -12,10 +12,12 @@ import time
 import logging
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
@@ -30,7 +32,7 @@ from app.core.middleware import (
     RequestSizeLimitMiddleware,
 )
 from app.core.indexes import create_performance_indexes
-from app.api import api_router
+from app.api import api_router, legacy_router
 
 logger = logging.getLogger("vestra")
 
@@ -40,6 +42,8 @@ logger = logging.getLogger("vestra")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ──
+    # IMPORTANT: In production, run `alembic upgrade head` before starting the app.
+    # Schema is managed through Alembic migrations — not auto-created.
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     await create_tables()
 
@@ -54,6 +58,25 @@ async def lifespan(app: FastAPI):
         logger.info('{"event":"startup","redis":"connected"}')
     except Exception:
         logger.warning('{"event":"startup","redis":"unavailable — caching disabled"}')
+
+    # Initialize Sentry for error tracking
+    if settings.SENTRY_DSN:
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            integrations=[FastApiIntegration()],
+            environment=settings.ENVIRONMENT,
+            release=settings.APP_VERSION,
+            traces_sample_rate=(
+                settings.SENTRY_TRACES_SAMPLE_RATE
+                if settings.ENVIRONMENT == "production"
+                else 1.0
+            ),
+            profiles_sample_rate=0.1,
+        )
+        logger.info(
+            '{"event":"startup","sentry":"enabled","env":"%s"}',
+            settings.ENVIRONMENT,
+        )
 
     logger.info(
         '{"event":"startup","app":"%s","version":"%s","env":"%s"}',
@@ -103,7 +126,7 @@ app.middleware("http")(metrics_middleware)
 # 6. Structured request logging
 app.add_middleware(RequestLoggingMiddleware)
 
-# 6. CORS
+# 7. CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -114,9 +137,28 @@ app.add_middleware(
     max_age=3600,
 )
 
+# ── API Deprecation Middleware ───────────────────────────────────────────────────
+# Adds deprecation headers to unversioned /api/* paths (not /api/v1/*).
+# Clients should migrate to the canonical /api/v1/ prefix.
+
+@app.middleware("http")
+async def api_deprecation_middleware(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/") and not path.startswith("/api/v1/"):
+        response.headers["X-API-Deprecated"] = "true"
+        response.headers["Sunset"] = "Sat, 31 Dec 2026 23:59:59 GMT"
+        logger.warning(
+            '{"event":"deprecated_api_call","path":"%s","method":"%s"}',
+            path, request.method,
+        )
+    return response
+
+
 # ── Routers ────────────────────────────────────────────────────────────────────
 
 app.include_router(api_router)
+app.include_router(legacy_router)
 
 # Prometheus metrics endpoint (secured in production via reverse proxy)
 app.add_route("/metrics", metrics_endpoint, methods=["GET"])

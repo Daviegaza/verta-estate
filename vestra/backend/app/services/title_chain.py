@@ -42,16 +42,26 @@ class TitleBlock:
     validator: str = "VESTRA_AI"  # Who/what validated this event
 
     def compute_hash(self) -> str:
-        """SHA-256 hash of the entire block."""
-        raw = json.dumps({
-            "index": self.block_index,
-            "timestamp": self.timestamp,
-            "event_type": self.event_type,
-            "property_id": self.property_id,
-            "data": self.data,
-            "previous_hash": self.previous_hash,
-            "validator": self.validator,
-        }, sort_keys=True, default=str)
+        """
+        SHA-256 hash of the block per TitleChain specification.
+        Combines: previous_hash + property_id + owner_name + transaction_type
+        + transaction_amount + timestamp + created_by_id.
+        All fields are extracted from self.data with safe defaults so the
+        formula works for both genesis (registration) and subsequent blocks.
+        """
+        owner_name = self.data.get("owner_name", "")
+        transaction_type = self.data.get("transaction_type", self.event_type)
+        transaction_amount = str(self.data.get("transaction_amount", 0))
+        created_by_id = str(self.data.get("created_by_id", ""))
+        raw = (
+            f"{self.previous_hash}"
+            f"{self.property_id}"
+            f"{owner_name}"
+            f"{transaction_type}"
+            f"{transaction_amount}"
+            f"{self.timestamp}"
+            f"{created_by_id}"
+        )
         return hashlib.sha256(raw.encode()).hexdigest()
 
 
@@ -183,6 +193,128 @@ class TitleChain:
         """Get the latest block in the chain."""
         blocks = await self._load_chain(db, property_id)
         return blocks[-1] if blocks else None
+
+    # ── Convenience Methods (public API) ─────────────────────────────────────────
+
+    async def create_genesis_block(
+        self, db: AsyncSession, *,
+        property_id: int,
+        owner_name: str,
+        title_number: str,
+        land_reference: str,
+        county: str,
+        size_sqft: float,
+        created_by_id: int,
+    ) -> TitleBlock:
+        """
+        Create the genesis (first) block in the title chain for a property.
+        Records original registration with all ownership details.
+        """
+        block = TitleBlock(
+            block_index=0,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            event_type="registration",
+            property_id=property_id,
+            data={
+                "owner_name": owner_name,
+                "title_number": title_number,
+                "land_reference": land_reference,
+                "county": county,
+                "size_sqft": size_sqft,
+                "created_by_id": created_by_id,
+                "chain_id": (
+                    f"VTC-{property_id}-"
+                    f"{hashlib.sha256(str(property_id).encode()).hexdigest()[:12]}"
+                ),
+            },
+            previous_hash=self.GENESIS_HASH,
+            validator="LAND_REGISTRY",
+        )
+        block.hash = block.compute_hash()
+        await self._save_block(db, block)
+        logger.info(
+            '{"event":"title_chain_genesis","property_id":%d,"chain_id":"%s"}',
+            property_id, block.data.get("chain_id"),
+        )
+        return block
+
+    async def append_block(
+        self, db: AsyncSession, *,
+        property_id: int,
+        new_owner_name: str,
+        transaction_type: str,
+        transaction_amount: float,
+        created_by_id: int,
+        document_hash: Optional[str] = None,
+    ) -> TitleBlock:
+        """
+        Append a new block to the property's title chain.
+        Links cryptographically to the previous block.
+        """
+        last_block = await self.get_latest_block(db, property_id)
+        if not last_block:
+            raise ValueError(f"No title chain exists for property {property_id}. Create genesis first.")
+
+        data = {
+            "owner_name": new_owner_name,
+            "transaction_type": transaction_type,
+            "transaction_amount": transaction_amount,
+            "created_by_id": created_by_id,
+        }
+        if document_hash:
+            data["document_hash"] = document_hash
+
+        block = TitleBlock(
+            block_index=last_block.block_index + 1,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            event_type=transaction_type,
+            property_id=property_id,
+            data=data,
+            previous_hash=last_block.hash,
+            validator="VESTRA_AI",
+        )
+        block.hash = block.compute_hash()
+        await self._save_block(db, block)
+        await cache_set(
+            f"vestra:titlechain:{property_id}:latest",
+            {"block_index": block.block_index, "hash": block.hash, "event": transaction_type},
+            ttl=86400,
+        )
+        logger.info(
+            '{"event":"title_chain_block","property_id":%d,"type":"%s","index":%d}',
+            property_id, transaction_type, block.block_index,
+        )
+        return block
+
+    async def validate_chain(self, db: AsyncSession, property_id: int) -> dict:
+        """
+        Walk the entire chain from genesis and verify every hash links correctly.
+        Returns: {valid: bool, blocks: int, first_broken_link: int | None}
+        """
+        blocks = await self._load_chain(db, property_id)
+        if not blocks:
+            return {"valid": False, "blocks": 0, "first_broken_link": None}
+
+        for i, block in enumerate(blocks):
+            computed = block.compute_hash()
+            if computed != block.hash:
+                return {
+                    "valid": False,
+                    "blocks": len(blocks),
+                    "first_broken_link": i,
+                }
+            if i > 0 and block.previous_hash != blocks[i - 1].hash:
+                return {
+                    "valid": False,
+                    "blocks": len(blocks),
+                    "first_broken_link": i,
+                }
+
+        return {
+            "valid": True,
+            "blocks": len(blocks),
+            "first_broken_link": None,
+        }
 
     # ── Database Operations ──────────────────────────────────────────────────
 

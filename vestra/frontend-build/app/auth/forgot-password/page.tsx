@@ -5,20 +5,30 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { ShieldCheck, Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Mail, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
+import api from '@/lib/api';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    // Simulate request — backend password reset endpoint not yet implemented
-    await new Promise((r) => setTimeout(r, 1500));
-    setSent(true);
-    setLoading(false);
+    setError('');
+    try {
+      await api.forgotPassword(email);
+      setSent(true);
+    } catch (err: any) {
+      const message = err?.response?.data?.detail
+        || err?.response?.data?.message
+        || 'Something went wrong. Please try again later.';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -49,6 +59,13 @@ export default function ForgotPasswordPage() {
                 required
                 leftElement={<Mail className="w-4 h-4" />}
               />
+
+              {error && (
+                <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              )}
 
               <Button type="submit" fullWidth loading={loading}>
                 Send Reset Link

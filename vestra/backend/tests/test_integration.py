@@ -240,10 +240,12 @@ class TestSecurityHeaders:
 
     async def test_correlation_id_present(self, client):
         res = await client.get("/health")
+        headers = res.headers
         assert "x-correlation-id" in headers
 
     async def test_rate_limit_headers_present(self, client):
         res = await client.get("/api/properties")
+        headers = res.headers
         assert "x-ratelimit-remaining" in headers
 
 

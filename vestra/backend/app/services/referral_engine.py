@@ -10,6 +10,7 @@ Based on Uber/Airbnb/PayPal viral growth models.
 from __future__ import annotations
 
 import uuid
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -112,6 +113,21 @@ async def award_referral_reward(
     if not referral:
         return None
 
+    # Check if this action was already awarded for this referral (idempotency)
+    from app.models.referral import ReferralReward
+    duplicate_check = await db.execute(
+        select(ReferralReward).where(
+            ReferralReward.referral_id == referral.id,
+            ReferralReward.action == action,
+        )
+    )
+    if duplicate_check.scalar_one_or_none():
+        logger.info(
+            '{"event":"referral_reward_duplicate_skipped","referrer":%d,"referred":%d,"action":"%s"}',
+            referral.referrer_id, user_id, action,
+        )
+        return None
+
     reward = REWARDS[action]
     referral.rewards_earned += reward["kes"]
     referral.total_rewards += reward["kes"]
@@ -122,7 +138,6 @@ async def award_referral_reward(
     await db.commit()
 
     # Create reward transaction
-    from app.models.referral import ReferralReward
     reward_entry = ReferralReward(
         referral_id=referral.id,
         referrer_id=referral.referrer_id,
@@ -138,6 +153,16 @@ async def award_referral_reward(
         '{"event":"referral_reward","referrer":%d,"action":"%s","amount":%d}',
         referral.referrer_id, action, reward["kes"],
     )
+
+    # ── Fire event bus: referral rewarded ──────────────────────────────────
+    asyncio.create_task(_bg_emit_referral_event(
+        referrer_id=referral.referrer_id,
+        action=action,
+        reward_kes=reward["kes"],
+        reward_type=reward["type"],
+        referred_user_id=user_id,
+    ))
+
     return {
         "referrer_id": referral.referrer_id,
         "action": action,
@@ -216,3 +241,35 @@ async def get_referral_leaderboard(db: AsyncSession, limit: int = 20) -> list:
         })
 
     return leaderboard
+
+
+# ── Background event helpers ──────────────────────────────────────────────────
+
+
+async def _bg_emit_referral_event(
+    referrer_id: int,
+    action: str,
+    reward_kes: int,
+    reward_type: str,
+    referred_user_id: int,
+) -> None:
+    """Fire-and-forget: emit referral.rewarded event."""
+    from app.services.event_bus import emit_event, EVENT_REFERRAL_REWARDED
+
+    try:
+        data = {
+            "action": action,
+            "reward_kes": reward_kes,
+            "reward_type": reward_type,
+            "referred_user_id": referred_user_id,
+        }
+        await emit_event(
+            event_type=EVENT_REFERRAL_REWARDED,
+            user_id=referrer_id,
+            data=data,
+        )
+    except Exception:
+        logger.warning(
+            '{"event":"bg_referral_event_failed","referrer_id":%d,"action":"%s"}',
+            referrer_id, action,
+        )

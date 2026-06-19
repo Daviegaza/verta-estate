@@ -5,6 +5,7 @@ Impossible to bypass — every admin action is server-verified.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
@@ -91,6 +92,33 @@ def create_access_token(
         to_encode["ip"] = client_ip
 
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def create_refresh_token(
+    data: dict,
+    expires_delta: Optional[timedelta] = None,
+    client_ip: Optional[str] = None,
+) -> tuple[str, str]:
+    """
+    Create a refresh token JWT with a unique jti (JWT ID) for individual revocation.
+    Returns (token, jti) tuple so the caller can store the jti in Redis.
+    """
+    to_encode = data.copy()
+    jti = str(uuid.uuid4())
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    )
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+        "type": "refresh",
+        "jti": jti,
+    })
+    if client_ip:
+        to_encode["ip"] = client_ip
+
+    token = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return token, jti
 
 
 def decode_token(token: str) -> dict:

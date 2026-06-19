@@ -4,6 +4,7 @@ Sellers, agents, and landlords require paid subscriptions. Buyers are FREE.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -212,6 +213,12 @@ async def create_subscription(
     # Clear cache
     await cache_delete(f"vestra:sub:{user_id}")
     logger.info('{"event":"subscription_created","user_id":%d,"tier":"%s"}', user_id, tier)
+
+    # ── Fire event bus: subscription created ───────────────────────────────
+    asyncio.create_task(
+        _bg_emit_subscription_event(sub, "created")
+    )
+
     return sub
 
 
@@ -284,6 +291,12 @@ async def renew_subscription(
     await cache_delete(f"vestra:sub:{user_id}")
     logger.info('{"event":"subscription_renewed","user_id":%d,"payment_id":%d}',
                 user_id, payment_id)
+
+    # ── Fire event bus: subscription renewed ───────────────────────────────
+    asyncio.create_task(
+        _bg_emit_subscription_event(sub, "renewed")
+    )
+
     return sub
 
 
@@ -454,3 +467,29 @@ async def _get_role_from_sub(db: AsyncSession, user_id: int) -> str:
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     return user.role.value if user else "seller"
+
+
+# ── Background event helpers ──────────────────────────────────────────────────
+
+
+async def _bg_emit_subscription_event(sub, action: str) -> None:
+    """Fire-and-forget: emit subscription event."""
+    from app.services.event_bus import emit_event, EVENT_SUBSCRIPTION_CREATED
+
+    try:
+        data = {
+            "subscription_id": sub.id,
+            "tier": sub.tier.value if sub.tier else "unknown",
+            "action": action,
+            "amount_kes": float(sub.amount_kes),
+        }
+        await emit_event(
+            event_type=EVENT_SUBSCRIPTION_CREATED,
+            user_id=sub.user_id,
+            data=data,
+        )
+    except Exception:
+        logger.warning(
+            '{"event":"bg_subscription_event_failed","subscription_id":%d,"action":"%s"}',
+            sub.id, action,
+        )

@@ -4,7 +4,10 @@ import { useEffect } from 'react';
 
 /**
  * Registers the service worker for PWA offline support and push notifications.
- * Runs once on app load. Silent — no UI.
+ *
+ * IMPORTANT: In development, ALL service workers are aggressively unregistered
+ * to prevent stale chunk errors. The SW file (sw.js.prod-only) is only copied
+ * to sw.js during the production build.
  */
 export default function ServiceWorkerRegister() {
   useEffect(() => {
@@ -12,24 +15,40 @@ export default function ServiceWorkerRegister() {
       return;
     }
 
-    // Only register SW in production — in dev it caches stale chunks
-    if (process.env.NODE_ENV !== 'production') {
-      // Unregister any existing SW from previous sessions
-      navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+    const isDev = process.env.NODE_ENV !== 'production';
+
+    // In development: NUKES all service workers immediately.
+    // Stale SWs are the #1 cause of "module factory not available" errors
+    // because they serve outdated Turbopack chunks with immutable hashes.
+    if (isDev) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        if (regs.length > 0) {
+          console.debug(
+            `[Vestra] Dev mode — unregistering ${regs.length} service worker(s) to prevent stale chunks.`
+          );
+          regs.forEach((r) => r.unregister());
+        }
+      });
+      // Also clear any SW caches for good measure
+      if ('caches' in window) {
+        caches.keys().then((keys) => {
+          keys.forEach((k) => caches.delete(k));
+        });
+      }
       return;
     }
 
-    // Register the service worker
+    // Production: register the service worker (must exist at /sw.js)
+    // The build pipeline copies sw.js.prod-only → sw.js in the output.
     navigator.serviceWorker
-      .register('/sw.js', { scope: '/' })
+      .register('/sw.js', { scope: '/', updateViaCache: 'none' })
       .then((registration) => {
-        // Check for updates
+        // Listen for updates
         registration.addEventListener('updatefound', () => {
           const newWorker = registration.installing;
           if (newWorker) {
             newWorker.addEventListener('statechange', () => {
               if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                // New content available — could show update prompt here
                 console.log('[Vestra PWA] New version available. Refresh to update.');
               }
             });
@@ -37,16 +56,9 @@ export default function ServiceWorkerRegister() {
         });
       })
       .catch((err) => {
-        // Service worker registration failed — app works fine without it
+        // SW registration failed — app works fine without it
         console.debug('[Vestra PWA] Service worker registration skipped:', err.message);
       });
-
-    // Request push notification permission (deferred — only when user triggers it)
-    // The actual permission request happens when user clicks "Enable Notifications"
-    if ('Notification' in window && Notification.permission === 'default') {
-      // Don't auto-request — wait for user action
-      // Notification.requestPermission() is called from a user-triggered button elsewhere
-    }
   }, []);
 
   return null; // This component renders nothing

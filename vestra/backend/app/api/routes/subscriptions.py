@@ -91,7 +91,7 @@ async def my_subscription(
 
 @router.post("/subscribe")
 async def subscribe_to_plan(
-    tier: str = Query(..., regex="^(free|basic|pro|premium)$"),
+    tier: str = Query(..., pattern="^(free|basic|pro|premium)$"),
     phone_number: str = Query(..., description="M-Pesa phone number 2547XXXXXXXX"),
     background_tasks: BackgroundTasks = None,
     current_user=Depends(get_current_user),
@@ -157,7 +157,7 @@ async def subscribe_to_plan(
 
 @router.post("/upgrade")
 async def upgrade_plan(
-    tier: str = Query(..., regex="^(basic|pro|premium)$"),
+    tier: str = Query(..., pattern="^(basic|pro|premium)$"),
     phone_number: str = Query(..., description="M-Pesa phone number"),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

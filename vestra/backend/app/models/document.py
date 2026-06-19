@@ -34,8 +34,8 @@ class Document(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    property = relationship("Property", back_populates="documents", lazy="selectin")
-    uploader = relationship("User", lazy="selectin")
+    property = relationship("Property", back_populates="documents")
+    uploader = relationship("User")
 
 
 class VerificationStatus(str, enum.Enum):
@@ -77,7 +77,7 @@ class Verification(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    property = relationship("Property", back_populates="verifications", lazy="selectin")
-    user = relationship("User", back_populates="verifications", lazy="selectin", foreign_keys=[user_id])
-    requester = relationship("User", lazy="selectin", foreign_keys=[requester_id])
-    reviewer = relationship("User", lazy="selectin", foreign_keys=[reviewed_by_id])
+    property = relationship("Property", back_populates="verifications")
+    user = relationship("User", back_populates="verifications", foreign_keys=[user_id])
+    requester = relationship("User", foreign_keys=[requester_id])
+    reviewer = relationship("User", foreign_keys=[reviewed_by_id])

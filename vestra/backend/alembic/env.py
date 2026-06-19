@@ -12,8 +12,28 @@ from alembic import context
 from app.core.config import settings
 from app.core.database import Base
 
-# Import all models so Alembic can detect them
-from app.models import user, property, document, payment, audit_log  # noqa: F401
+# Import all models so Alembic can detect them (via __init__.py which re-exports everything)
+# Note: Base is already imported from app.core.database above (line 13)
+from app.models import (  # noqa: F401
+    User, UserRole,
+    Property, AgentProfile, PropertyType, ListingType, PropertyStatus,
+    Document, Verification, DocumentType, VerificationStatus,
+    Payment, PaymentStatus, PaymentMethod, PaymentPurpose,
+    Subscription, SubscriptionTier, SubscriptionStatus,
+    Referral, ReferralReward, ReferralStatus,
+    TitleChainBlock,
+    AuditLog,
+    RentalUnit, Tenant, Lease, RentPayment, MaintenanceRequest,
+    LeaseStatus, RentPaymentStatus, MaintenancePriority, MaintenanceStatus,
+    KYCVerification, KYCStatus, Notification, Message,
+    SavedProperty, SavedSearch,
+    Review, EscrowTransaction, EscrowStatus,
+    Dispute, DisputeStatus, FraudReport, FraudReportStatus,
+    APIKey, Webhook, WebhookEvent,
+    Coupon, DiscountType, Payout, PayoutStatus,
+    RentReceipt, InspectionReport, InspectionType,
+    UserEvent, PriceChange, VerificationOutcome, SearchAnalytics,
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

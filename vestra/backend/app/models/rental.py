@@ -67,10 +67,10 @@ class RentalUnit(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    landlord = relationship("User", lazy="selectin")
-    property = relationship("Property", lazy="selectin")
-    leases = relationship("Lease", back_populates="unit", lazy="selectin")
-    tenants = relationship("Tenant", back_populates="unit", lazy="selectin")
+    landlord = relationship("User")
+    property = relationship("Property")
+    leases = relationship("Lease", back_populates="unit", cascade="all, delete-orphan")
+    tenants = relationship("Tenant", back_populates="unit", cascade="all, delete-orphan")
 
 
 # ── Tenant ────────────────────────────────────────────────────────────────────
@@ -95,9 +95,9 @@ class Tenant(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    unit = relationship("RentalUnit", back_populates="tenants", lazy="selectin")
-    lease = relationship("Lease", back_populates="tenant", uselist=False, lazy="selectin")
-    payments = relationship("RentPayment", back_populates="tenant", lazy="selectin")
+    unit = relationship("RentalUnit", back_populates="tenants")
+    lease = relationship("Lease", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
+    payments = relationship("RentPayment", back_populates="tenant", cascade="all, delete-orphan")
 
 
 # ── Lease ─────────────────────────────────────────────────────────────────────
@@ -120,8 +120,8 @@ class Lease(Base):
     auto_renew = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    unit = relationship("RentalUnit", back_populates="leases", lazy="selectin")
-    tenant = relationship("Tenant", back_populates="lease", lazy="selectin")
+    unit = relationship("RentalUnit", back_populates="leases")
+    tenant = relationship("Tenant", back_populates="lease")
 
 
 # ── Rent Payment ──────────────────────────────────────────────────────────────
@@ -147,8 +147,8 @@ class RentPayment(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    tenant = relationship("Tenant", back_populates="payments", lazy="selectin")
-    unit = relationship("RentalUnit", lazy="selectin")
+    tenant = relationship("Tenant", back_populates="payments")
+    unit = relationship("RentalUnit")
 
 
 # ── Maintenance Request ───────────────────────────────────────────────────────
@@ -174,5 +174,5 @@ class MaintenanceRequest(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    unit = relationship("RentalUnit", lazy="selectin")
-    tenant = relationship("Tenant", lazy="selectin")
+    unit = relationship("RentalUnit")
+    tenant = relationship("Tenant")

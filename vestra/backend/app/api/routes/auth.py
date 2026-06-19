@@ -3,10 +3,12 @@ Authentication routes — register, login, password reset, email verification.
 """
 from __future__ import annotations
 
+import asyncio
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from jose import JWTError, jwt
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,15 +16,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import (
-    create_access_token, get_current_user,
+    create_access_token, create_refresh_token, get_current_user,
     get_password_hash, verify_password,
     validate_password_strength,
 )
 from fastapi import Request
-from app.core.redis import cache_set, cache_get, cache_delete, get_redis
+from app.core.redis import (
+    cache_set, cache_get, cache_delete, get_redis,
+    store_refresh_token, is_refresh_token_valid, revoke_all_refresh_tokens,
+)
 from app.schemas.user import (
     UserCreate, UserLogin, UserResponse, Token, UserUpdate,
     ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest,
+    RefreshTokenRequest, TokenRefreshResponse,
 )
 from app.services.user_service import (
     create_user, authenticate_user, get_user_by_email, update_user,
@@ -34,6 +40,7 @@ from app.services.email_service import (
     send_welcome_email,
 )
 from app.services.captcha_service import verify_turnstile
+from app.services.analytics_service import fire_and_forget_track_user_event
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -69,7 +76,7 @@ async def register(
             detail="Email already registered",
         )
 
-    user = await create_user(db, user_data)
+    user = await create_user(db, user_data, referral_code=user_data.referral_code)
     client_ip = request.client.host if request.client else None
     token = create_access_token({"sub": str(user.id)}, client_ip=client_ip)
 
@@ -77,6 +84,15 @@ async def register(
     verify_token = secrets.token_urlsafe(32)
     await cache_set(f"vestra:email_verify:{verify_token}", user.id, ttl=86400)  # 24h
     background_tasks.add_task(send_verification_email, user.email, user.full_name, verify_token)
+
+    # ── Fire-and-forget: track registration event ────────────────────────
+    asyncio.create_task(
+        fire_and_forget_track_user_event(
+            user_id=user.id,
+            event_type="register",
+            event_data={"email": user.email, "role": user.role.value if user.role else "buyer"},
+        )
+    )
 
     return Token(access_token=token, user=UserResponse.model_validate(user))
 
@@ -144,6 +160,14 @@ async def login(form_data: UserLogin, request: Request, db: AsyncSession = Depen
         await r.delete(f"{lockout_key}:count")
 
     token = create_access_token({"sub": str(user.id)}, client_ip=client_ip)
+    # ── Fire-and-forget: track login event ─────────────────────────────
+    asyncio.create_task(
+        fire_and_forget_track_user_event(
+            user_id=user.id,
+            event_type="login",
+            event_data={"email": user.email, "role": user.role.value if user.role else "buyer"},
+        )
+    )
     return Token(access_token=token, user=UserResponse.model_validate(user))
 
 
@@ -308,3 +332,81 @@ async def resend_verification(
     background_tasks.add_task(send_verification_email, user.email, user.full_name, verify_token)
 
     return {"message": "Verification email sent. Check your inbox."}
+
+
+# ── Refresh Token ──────────────────────────────────────────────────────────────
+
+@router.post("/refresh", response_model=TokenRefreshResponse)
+async def refresh_token(
+    data: RefreshTokenRequest,
+    request: Request,
+):
+    """
+    Rotate refresh tokens.
+    1. Validates the refresh token JWT
+    2. Checks it hasn't been revoked (Redis lookup)
+    3. Issues a new access token AND a new refresh token
+    4. Revokes the old refresh token, stores the new one
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={
+            "error": "invalid_refresh_token",
+            "message": "Your session has expired. Please log in again.",
+        },
+    )
+
+    try:
+        payload = jwt.decode(
+            data.refresh_token, settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+        user_id = payload.get("sub")
+        token_type = payload.get("type")
+        jti = payload.get("jti")
+
+        if user_id is None or token_type != "refresh" or jti is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    # Check token is not revoked in Redis
+    user_id_int = int(user_id)
+    valid = await is_refresh_token_valid(user_id_int, jti)
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error": "refresh_token_revoked",
+                "message": "This session has been revoked. Please log in again.",
+            },
+        )
+
+    # Issue new tokens (rotate)
+    client_ip = request.client.host if request.client else None
+    new_access_token = create_access_token({"sub": str(user_id_int)}, client_ip=client_ip)
+    new_refresh_token, new_jti = create_refresh_token({"sub": str(user_id_int)}, client_ip=client_ip)
+
+    # Revoke old refresh token, store the new one
+    r = await get_redis()
+    if r is not None:
+        await r.delete(f"vestra:refresh:{user_id_int}:{jti}")
+    refresh_ttl = settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
+    await store_refresh_token(user_id_int, new_jti, ttl=refresh_ttl)
+
+    return TokenRefreshResponse(
+        access_token=new_access_token,
+        refresh_token=new_refresh_token,
+    )
+
+
+# ── Logout ─────────────────────────────────────────────────────────────────────
+
+@router.post("/logout")
+async def logout(current_user=Depends(get_current_user)):
+    """
+    Logout the current user by revoking all their refresh tokens.
+    The current access token will expire naturally (1h TTL).
+    """
+    await revoke_all_refresh_tokens(current_user.id)
+    return {"message": "Logged out successfully"}

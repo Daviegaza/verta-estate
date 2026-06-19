@@ -40,9 +40,9 @@ class Review(Base):
     is_verified_transaction = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    reviewer = relationship("User", foreign_keys=[reviewer_id], lazy="selectin")
-    subject = relationship("User", foreign_keys=[subject_id], lazy="selectin")
-    property = relationship("Property", lazy="selectin")
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
+    subject = relationship("User", foreign_keys=[subject_id])
+    property = relationship("Property")
 
     __table_args__ = (
         UniqueConstraint(
@@ -87,10 +87,10 @@ class EscrowTransaction(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    property = relationship("Property", lazy="selectin")
-    buyer = relationship("User", foreign_keys=[buyer_id], lazy="selectin")
-    seller = relationship("User", foreign_keys=[seller_id], lazy="selectin")
-    agent = relationship("User", foreign_keys=[agent_id], lazy="selectin")
+    property = relationship("Property")
+    buyer = relationship("User", foreign_keys=[buyer_id])
+    seller = relationship("User", foreign_keys=[seller_id])
+    agent = relationship("User", foreign_keys=[agent_id])
 
     __table_args__ = (
         CheckConstraint("amount_kes > 0", name="ck_escrow_amount_positive"),
@@ -134,9 +134,9 @@ class Dispute(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    reporter = relationship("User", foreign_keys=[reporter_id], lazy="selectin")
-    resolved_by = relationship("User", foreign_keys=[resolved_by_id], lazy="selectin")
-    property = relationship("Property", lazy="selectin")
+    reporter = relationship("User", foreign_keys=[reporter_id])
+    resolved_by = relationship("User", foreign_keys=[resolved_by_id])
+    property = relationship("Property")
 
     __table_args__ = (
         Index("ix_disputes_status_created", "status", "created_at"),
@@ -171,8 +171,8 @@ class FraudReport(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    reporter = relationship("User", foreign_keys=[reporter_id], lazy="selectin")
-    reviewer = relationship("User", foreign_keys=[reviewed_by_id], lazy="selectin")
+    reporter = relationship("User", foreign_keys=[reporter_id])
+    reviewer = relationship("User", foreign_keys=[reviewed_by_id])
 
     __table_args__ = (
         Index("ix_fraud_reports_status_created", "status", "created_at"),

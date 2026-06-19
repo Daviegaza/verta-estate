@@ -195,3 +195,32 @@ async def is_refresh_token_valid(user_id: int, token_jti: str) -> bool:
 async def revoke_all_refresh_tokens(user_id: int) -> None:
     """Revoke all refresh tokens for a user (e.g. on password change)."""
     await cache_delete(f"vestra:refresh:{user_id}:*")
+
+
+# ── Deduplication (idempotency) ──────────────────────────────────────────────
+
+async def check_and_mark_processed(key: str, ttl: int = 86400) -> bool:
+    """
+    Atomically check if a key has been processed and mark it as processed.
+    Uses Redis SET NX (set if not exists) for atomicity across workers.
+    Returns True if the key is new (proceed), False if already processed (skip).
+    TTL default: 24 hours — M-Pesa callbacks can be retried for up to 24h.
+    """
+    r = await get_redis()
+    if r is None:
+        # Redis down — use a fallback in-memory set for this worker only
+        if not hasattr(check_and_mark_processed, "_fallback"):
+            check_and_mark_processed._fallback = set()
+        fb = check_and_mark_processed._fallback
+        if key in fb:
+            return False
+        fb.add(key)
+        if len(fb) > 50000:
+            fb.clear()
+        return True
+    try:
+        # SET key value NX EX ttl — returns True only if key didn't exist
+        result = await r.set(f"vestra:processed:{key}", "1", nx=True, ex=ttl)
+        return result is True or result == "OK"
+    except Exception:
+        return True  # Fail open on Redis errors

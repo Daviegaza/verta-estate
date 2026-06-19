@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Optional
+import asyncio
 from datetime import datetime, timezone
 from app.models.document import Verification, VerificationStatus, Document
 from app.models.property import Property
@@ -137,6 +138,13 @@ async def run_ai_verification(
     await cache_delete(f"vestra:prop:{prop.id}")
     await cache_delete("vestra:list:*")
     await cache_delete("vestra:admin:stats")
+
+    # ── Fire event bus: verification completed ─────────────────────────────
+    from app.services.event_bus import emit_event, EVENT_VERIFICATION_COMPLETED
+    asyncio.create_task(
+        _bg_emit_verification_event(verification, prop)
+    )
+
     return verification
 
 
@@ -212,6 +220,29 @@ async def admin_review_verification(
     await db.refresh(verification)
     await cache_delete("vestra:list:*")
     await cache_delete("vestra:admin:stats")
+
+    # ── Fire event bus: verification completed (admin review) ──────────────
+    from app.services.event_bus import emit_event, EVENT_VERIFICATION_COMPLETED
+    asyncio.create_task(
+        _bg_emit_verification_event(verification, None)
+    )
+
+    # ── Fire-and-forget: track verification outcome ──────────────────────
+    from app.services.analytics_service import fire_and_forget_track_verification_outcome
+
+    asyncio.create_task(
+        fire_and_forget_track_verification_outcome(
+            verification_id=verification.id,
+            ai_prediction={
+                "fraud_risk_score": getattr(verification, "fraud_risk_score", None),
+                "trust_score": getattr(verification, "trust_score", None),
+                "ai_recommendation": getattr(verification, "ai_recommendation", None),
+            },
+            human_decision=verification.status.value if verification.status else "unknown",
+            ground_truth_notes=notes,
+        )
+    )
+
     return verification
 
 
@@ -250,3 +281,31 @@ async def get_monthly_verification_stats(db: AsyncSession) -> list:
         label = month_names[(now.month - 1 - i) % 12]
         months.append({"month": label, "verifications": data.get(label, 0)})
     return months
+
+
+# ── Background event helpers ──────────────────────────────────────────────────
+
+
+async def _bg_emit_verification_event(verification, prop) -> None:
+    """Fire-and-forget: emit verification.completed event."""
+    from app.services.event_bus import emit_event, EVENT_VERIFICATION_COMPLETED
+
+    try:
+        prop_title = prop.title if prop and hasattr(prop, "title") else str(verification.property_id)
+        data = {
+            "verification_id": verification.id,
+            "property_id": verification.property_id,
+            "property_title": prop_title,
+            "status": verification.status.value if verification.status else "unknown",
+            "trust_score": verification.trust_score,
+        }
+        await emit_event(
+            event_type=EVENT_VERIFICATION_COMPLETED,
+            user_id=verification.user_id,
+            data=data,
+        )
+    except Exception:
+        logger.warning(
+            '{"event":"bg_verification_event_failed","verification_id":%d}',
+            verification.id,
+        )

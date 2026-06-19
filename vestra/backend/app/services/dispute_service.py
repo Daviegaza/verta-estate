@@ -4,6 +4,7 @@ Handles buyer-seller disputes, fraud claims, and payment issues.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -64,6 +65,12 @@ async def create_dispute(
         '{"event":"dispute_created","id":%d,"reporter":%d,"category":"%s"}',
         dispute.id, reporter_id, category,
     )
+
+    # ── Fire event bus: dispute filed ──────────────────────────────────────
+    asyncio.create_task(
+        _bg_emit_dispute_event(dispute)
+    )
+
     return dispute
 
 
@@ -225,3 +232,29 @@ def _serialize_dispute(d: Dispute) -> dict:
         "created_at": d.created_at.isoformat() if d.created_at else None,
         "updated_at": d.updated_at.isoformat() if d.updated_at else None,
     }
+
+
+# ── Background event helpers ──────────────────────────────────────────────────
+
+
+async def _bg_emit_dispute_event(dispute) -> None:
+    """Fire-and-forget: emit dispute.filed event."""
+    from app.services.event_bus import emit_event, EVENT_DISPUTE_FILED
+
+    try:
+        data = {
+            "dispute_id": dispute.id,
+            "category": dispute.category,
+            "property_id": dispute.property_id,
+            "description": dispute.description[:200],
+        }
+        await emit_event(
+            event_type=EVENT_DISPUTE_FILED,
+            user_id=dispute.reporter_id,
+            data=data,
+        )
+    except Exception:
+        logger.warning(
+            '{"event":"bg_dispute_event_failed","dispute_id":%d}',
+            dispute.id,
+        )

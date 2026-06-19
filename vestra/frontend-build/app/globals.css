@@ -301,29 +301,118 @@ body {
   --foreground: #e5e7eb;
 }
 .dark body { background: #0a0f1a; color: #e5e7eb; }
+
+/* ── Backgrounds ─────────────────────────────────────────────────── */
 .dark .bg-white { background-color: #111827; }
 .dark .bg-gray-50 { background-color: #0f1724; }
 .dark .bg-gray-100 { background-color: #1a2332; }
+.dark .bg-gray-200 { background-color: #1e293b; }
+.dark .bg-gray-800 { background-color: #1f2937; }
+.dark .bg-gray-900 { background-color: #0a0f1a; }
+.dark .bg-gray-950 { background-color: #050a14; }
+.dark .bg-emerald-50 { background-color: #0a2e1a; }
+.dark .bg-emerald-100 { background-color: #0d3d22; }
+
+/* ── Text Colors ─────────────────────────────────────────────────── */
 .dark .text-gray-900 { color: #f1f5f9; }
 .dark .text-gray-800 { color: #e5e7eb; }
 .dark .text-gray-700 { color: #d1d5db; }
 .dark .text-gray-600 { color: #9ca3af; }
 .dark .text-gray-500 { color: #6b7280; }
 .dark .text-gray-400 { color: #4b5563; }
+.dark .text-gray-300 { color: #6b7280; }
+.dark .text-gray-200 { color: #9ca3af; }
+.dark .text-white { color: #e5e7eb; }
+
+/* ── Border Colors ───────────────────────────────────────────────── */
 .dark .border-gray-100 { border-color: #1f2937; }
 .dark .border-gray-200 { border-color: #374151; }
 .dark .border-gray-300 { border-color: #4b5563; }
-.dark .shadow-sm { box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+.dark .border-gray-400 { border-color: #6b7280; }
+.dark .border-gray-800 { border-color: #374151; }
+.dark .border-white { border-color: #374151; }
+.dark .border-white\/10 { border-color: rgba(55, 65, 81, 0.3); }
+.dark .border-white\/20 { border-color: rgba(55, 65, 81, 0.5); }
 .dark .divide-gray-50 > * { border-color: #1f2937; }
-.dark .bg-gray-950 { background-color: #050a14; }
+.dark .divide-gray-200 > * { border-color: #374151; }
+
+/* ── Shadows ─────────────────────────────────────────────────────── */
+.dark .shadow-sm { box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+.dark .shadow { box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3); }
+.dark .shadow-md { box-shadow: 0 4px 6px rgba(0,0,0,0.4); }
+.dark .shadow-lg { box-shadow: 0 10px 15px rgba(0,0,0,0.5); }
+.dark .shadow-xl { box-shadow: 0 20px 25px rgba(0,0,0,0.6); }
+
+/* ── Transitions / Hover ─────────────────────────────────────────── */
+.dark .hover\:bg-gray-50:hover { background-color: #1a2332; }
+.dark .hover\:bg-gray-100:hover { background-color: #1e293b; }
+.dark .hover\:bg-gray-200:hover { background-color: #233044; }
+.dark .hover\:text-gray-900:hover { color: #f1f5f9; }
+.dark .hover\:border-gray-300:hover { border-color: #6b7280; }
+.dark .hover\:shadow-lg:hover { box-shadow: 0 10px 15px rgba(0,0,0,0.5); }
+
+/* ── Gradients ───────────────────────────────────────────────────── */
 .dark .from-gray-900 { --tw-gradient-from: #0a0f1a; }
 .dark .via-emerald-950 { --tw-gradient-stops: #0a1620; }
 .dark .to-gray-900 { --tw-gradient-to: #0a0f1a; }
-.dark .hover\:bg-gray-50:hover { background-color: #1a2332; }
 .dark .bg-gradient-to-br.from-gray-950 { --tw-gradient-from: #050a14; }
+
+/* ── Form Elements ───────────────────────────────────────────────── */
 .dark input, .dark select, .dark textarea {
   background-color: #1a2332;
   color: #e5e7eb;
   border-color: #374151;
 }
 .dark input::placeholder { color: #6b7280; }
+.dark input:focus {
+  border-color: #059669;
+  box-shadow: 0 0 0 1px #059669;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+.dark .bg-emerald-500 { background-color: #059669; }
+.dark .hover\:bg-emerald-600:hover { background-color: #047857; }
+.dark .text-emerald-600 { color: #34d399; }
+.dark .text-emerald-500 { color: #10b981; }
+.dark .bg-emerald-50\/10 { background-color: rgba(5, 150, 105, 0.1); }
+
+/* ── Card Component Overrides ────────────────────────────────────── */
+.dark .card,
+.dark [class*="card"]:not([class*="bg-"]) {
+  background-color: #111827;
+  border-color: #1f2937;
+}
+.dark .hover-card:hover {
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Skeleton Loader ─────────────────────────────────────────────── */
+.dark .skeleton {
+  background: linear-gradient(90deg, #1a2332 25%, #233044 50%, #1a2332 75%);
+}
+
+/* ── Glass Morphism ──────────────────────────────────────────────── */
+.dark .glass {
+  background: rgba(17, 24, 39, 0.8);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Ring / Badge ────────────────────────────────────────────────── */
+.dark .ring-white { --tw-ring-color: rgba(55, 65, 81, 0.8); }
+.dark .ring-gray-100 { --tw-ring-color: #1f2937; }
+.dark .ring-offset-gray-900 { --tw-ring-offset-color: #0a0f1a; }
+
+/* ── Scrollbar ───────────────────────────────────────────────────── */
+.dark ::-webkit-scrollbar-track { background: #0f1724; }
+.dark ::-webkit-scrollbar-thumb { background: #374151; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+/* ── Ring / Trust Score ──────────────────────────────────────────── */
+.dark .trust-ring { stroke: #10b981; }
+
+/* ── Toast / Notification ────────────────────────────────────────── */
+.dark [data-sonner-toaster] {
+  --normal-bg: #1a2332;
+  --normal-border: #374151;
+  --normal-text: #e5e7eb;
+}

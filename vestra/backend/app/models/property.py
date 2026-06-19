@@ -85,9 +85,9 @@ class Property(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    owner = relationship("User", back_populates="properties", lazy="selectin")
-    documents = relationship("Document", back_populates="property", lazy="selectin")
-    verifications = relationship("Verification", back_populates="property", lazy="selectin")
+    owner = relationship("User", back_populates="properties")
+    documents = relationship("Document", back_populates="property", cascade="all, delete-orphan")
+    verifications = relationship("Verification", back_populates="property", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Property {self.title}>"
@@ -111,4 +111,4 @@ class AgentProfile(Base):
     subscription_expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", back_populates="agent_profile", lazy="selectin")
+    user = relationship("User", back_populates="agent_profile")

@@ -32,7 +32,7 @@ class APIKey(Base):
     expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", lazy="selectin")
+    user = relationship("User")
 
 
 class WebhookEvent(str, enum.Enum):
@@ -42,6 +42,13 @@ class WebhookEvent(str, enum.Enum):
     payment_completed = "payment.completed"
     rent_paid = "rent.paid"
     maintenance_updated = "maintenance.updated"
+    subscription_created = "subscription.created"
+    escrow_completed = "escrow.completed"
+    dispute_filed = "dispute.filed"
+    referral_rewarded = "referral.rewarded"
+    property_verified = "property.verified"
+    rental_payment_due = "rental.payment_due"
+    payout_processed = "payout.processed"
 
 
 class Webhook(Base):
@@ -59,7 +66,7 @@ class Webhook(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    user = relationship("User", lazy="selectin")
+    user = relationship("User")
 
 
 # ── Coupons / Promo Codes ──────────────────────────────────────────────────────
@@ -88,7 +95,7 @@ class Coupon(Base):
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    creator = relationship("User", lazy="selectin")
+    creator = relationship("User")
 
 
 # ── Payouts ────────────────────────────────────────────────────────────────────
@@ -117,7 +124,7 @@ class Payout(Base):
     processed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", lazy="selectin")
+    user = relationship("User")
 
 
 # ── Rent Receipts ──────────────────────────────────────────────────────────────
@@ -135,8 +142,8 @@ class RentReceipt(Base):
     month = Column(String(10), nullable=False)  # "2026-06"
     generated_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    payment = relationship("RentPayment", lazy="selectin")
-    tenant = relationship("Tenant", lazy="selectin")
+    payment = relationship("RentPayment")
+    tenant = relationship("Tenant")
 
 
 # ── Inspection Reports ─────────────────────────────────────────────────────────
@@ -161,5 +168,5 @@ class InspectionReport(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    unit = relationship("RentalUnit", lazy="selectin")
-    inspector = relationship("User", lazy="selectin")
+    unit = relationship("RentalUnit")
+    inspector = relationship("User")

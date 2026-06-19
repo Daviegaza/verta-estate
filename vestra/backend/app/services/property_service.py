@@ -63,6 +63,18 @@ async def create_property(db: AsyncSession, owner_id: int, data: PropertyCreate)
     db.add(prop)
     await db.commit()
     await db.refresh(prop)
+
+    # ── Referral reward: first property listing ────────────────────────────
+    if current_count == 0:
+        from app.services.referral_engine import award_referral_reward
+        reward_result = await award_referral_reward(db, owner_id, "first_listing")
+        if reward_result:
+            logger.info(
+                '{"event":"referral_reward_for_listing","referrer":%d,'
+                '"user_id":%d,"amount_kes":%d}',
+                reward_result["referrer_id"], owner_id,
+                reward_result["reward_kes"],
+            )
     # Invalidate listing caches (new property changes all listing pages)
     await cache_delete("vestra:list:*")
     await cache_delete("vestra:search:*")
@@ -117,10 +129,28 @@ def _prop_to_cache_dict(prop: Property) -> dict:
 async def update_property(
     db: AsyncSession, prop: Property, data: PropertyUpdate
 ) -> Property:
+    # Track old price before updating (for analytics)
+    old_price = prop.price
+
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(prop, field, value)
     await db.commit()
     await db.refresh(prop)
+
+    # ── Fire-and-forget: track price change if price was updated ─────────
+    from app.services.analytics_service import fire_and_forget_track_price_change
+    import asyncio
+
+    if data.model_dump(exclude_unset=True).get("price") is not None and old_price != prop.price:
+        asyncio.create_task(
+            fire_and_forget_track_price_change(
+                property_id=prop.id,
+                old_price=float(old_price) if old_price else 0,
+                new_price=float(prop.price) if prop.price else 0,
+                changed_by_id=prop.owner_id,
+            )
+        )
+
     # Invalidate cache for this property and listings
     await cache_delete(f"vestra:prop:{prop.id}")
     await cache_delete("vestra:list:*")

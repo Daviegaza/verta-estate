@@ -9,24 +9,25 @@ import ServiceWorkerRegister from '@/components/layout/ServiceWorkerRegister';
 import { ThemeProvider } from '@/components/layout/ThemeProvider';
 
 export const metadata: Metadata = {
-  title: 'Vestra — Trust Every Property',
-  description: "Africa's most trusted AI-powered property platform. Verify ownership, discover properties, invest with confidence.",
-  keywords: ['real estate', 'Kenya', 'property verification', 'AI', 'M-Pesa', 'Africa', 'WhatsApp'],
+  title: 'Vestra — AI-Powered Property Trust Platform | Kenya',
+  description: 'Buy, sell, rent, and verify properties in Kenya with AI-powered trust scoring. M-Pesa payments, title chain verification, and escrow protection.',
+  keywords: ['real estate', 'Kenya', 'property verification', 'AI', 'M-Pesa', 'Africa', 'WhatsApp', 'title deed', 'escrow'],
   authors: [{ name: 'Vestra', url: 'https://vestra.co.ke' }],
-  metadataBase: new URL('https://vestra.co.ke'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'),
+  alternates: { canonical: '/' },
   openGraph: {
-    title: 'Vestra — Trust Every Property',
-    description: "Africa's most trusted AI-powered property platform.",
+    title: 'Vestra — AI-Powered Property Trust Platform | Kenya',
+    description: 'Buy, sell, rent, and verify properties in Kenya with AI-powered trust scoring. M-Pesa payments, title chain verification, and escrow protection.',
     type: 'website',
     locale: 'en_KE',
     siteName: 'Vestra',
-    url: 'https://vestra.co.ke',
+    url: '/',
     images: [{ url: '/screenshots/home.png', width: 1280, height: 720 }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Vestra — Trust Every Property',
-    description: "Africa's most trusted AI-powered property platform.",
+    title: 'Vestra — AI-Powered Property Trust Platform | Kenya',
+    description: 'Buy, sell, rent, and verify properties in Kenya with AI-powered trust scoring. M-Pesa payments, title chain verification, and escrow protection.',
     images: ['/screenshots/home.png'],
   },
   appleWebApp: {

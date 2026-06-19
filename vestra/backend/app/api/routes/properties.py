@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -15,6 +16,7 @@ from app.services.property_service import (
 )
 from app.services.ai_service import generate_ai_property_search
 from app.services.subscription_service import get_user_subscription
+from app.services.analytics_service import fire_and_forget_track_search, fire_and_forget_track_user_event
 from app.models.user import UserRole
 from app.models.property import PropertyType, ListingType, PropertyStatus
 
@@ -58,6 +60,22 @@ async def list_properties(
         page=page, size=size,
     )
     result = await search_properties(db, search)
+    # ── Fire-and-forget: track search analytics ──────────────────────────
+    asyncio.create_task(
+        fire_and_forget_track_search(
+            user_id=None,  # public searches are not authenticated
+            query=search.query or "",
+            filters_applied={"city": search.city, "county": search.county,
+                             "property_type": search.property_type,
+                             "listing_type": search.listing_type,
+                             "min_price": search.min_price,
+                             "max_price": search.max_price,
+                             "bedrooms": search.bedrooms,
+                             "verified_only": search.verified_only},
+            results_count=result["total"],
+            session_id="public",
+        )
+    )
     # Items may already be dicts (from cache) or ORM objects (fresh)
     items_data = result["items"]
     if items_data and isinstance(items_data[0], dict):
@@ -151,6 +169,14 @@ async def get_property(
     prop = await get_property_by_id(db, property_id)
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
+    # ── Fire-and-forget: track property view event ────────────────────────
+    asyncio.create_task(
+        fire_and_forget_track_user_event(
+            user_id=None,
+            event_type="view",
+            event_data={"property_id": property_id, "title": prop.get("title") if isinstance(prop, dict) else getattr(prop, "title", "")},
+        )
+    )
     # Handle both dict (cached) and ORM object (fresh)
     if isinstance(prop, dict):
         result = prop

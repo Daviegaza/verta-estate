@@ -25,7 +25,7 @@ class UserEvent(Base):
     client_timestamp = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", lazy="selectin")
+    user = relationship("User")
 
 
 class PriceChange(Base):
@@ -40,8 +40,8 @@ class PriceChange(Base):
     reason = Column(String(200), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    property = relationship("Property", lazy="selectin")
-    changed_by = relationship("User", lazy="selectin")
+    property = relationship("Property")
+    changed_by = relationship("User")
 
 
 class VerificationOutcome(Base):
@@ -56,7 +56,7 @@ class VerificationOutcome(Base):
     ground_truth_notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    verification = relationship("Verification", lazy="selectin")
+    verification = relationship("Verification")
 
 
 class SearchAnalytics(Base):
@@ -72,5 +72,5 @@ class SearchAnalytics(Base):
     session_id = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", lazy="selectin")
-    clicked_property = relationship("Property", lazy="selectin")
+    user = relationship("User")
+    clicked_property = relationship("Property")

@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     ACCOUNT_LOCKOUT_MAX_ATTEMPTS: int = 5
     ACCOUNT_LOCKOUT_DURATION_MINUTES: int = 15
 
+    # ── Sentry (Error Tracking) ──────────────────────────────────────────────
+    SENTRY_DSN: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1  # 10% in default, overridden in init
+
     # ── Security ────────────────────────────────────────────────────────────
     CSP_ENABLED: bool = True
     CSRF_ENABLED: bool = True

@@ -40,6 +40,18 @@ async def get_db():
 
 
 async def create_tables():
-    async with engine.begin() as conn:
-        from app.models import user, property, document, payment, audit_log, subscription, referral, title_chain, rental  # noqa: F401
-        await conn.run_sync(Base.metadata.create_all)
+    """Auto-create tables only in development.
+
+    In production and staging, schema is managed via Alembic migrations.
+    Run `alembic upgrade head` before starting the app in production.
+    """
+    if settings.ENVIRONMENT == "development":
+        async with engine.begin() as conn:
+            from app.models import user, property, document, payment, audit_log, subscription, referral, title_chain, rental  # noqa: F401
+            await conn.run_sync(Base.metadata.create_all)
+    else:
+        logger = __import__("logging").getLogger("vestra")
+        logger.info(
+            '{"event":"create_tables","skipped":true,"reason":"migrations manage schema in %s"}',
+            settings.ENVIRONMENT,
+        )

@@ -4,6 +4,7 @@ Vestra holds funds in escrow until conditions are met, protecting both buyer and
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -125,6 +126,13 @@ async def release_escrow(
         '{"event":"escrow_released","id":%d,"seller_payout":%s,"fee":%s}',
         escrow_id, seller_payout, fee_kes,
     )
+
+    # ── Fire event bus: escrow completed ───────────────────────────────────
+    from app.services.event_bus import emit_event, EVENT_ESCROW_COMPLETED
+    asyncio.create_task(
+        _bg_emit_escrow_event(escrow)
+    )
+
     return escrow
 
 
@@ -276,3 +284,30 @@ def _serialize_escrow(e: EscrowTransaction) -> dict:
         "created_at": e.created_at.isoformat() if e.created_at else None,
         "updated_at": e.updated_at.isoformat() if e.updated_at else None,
     }
+
+
+# ── Background event helpers ──────────────────────────────────────────────────
+
+
+async def _bg_emit_escrow_event(escrow) -> None:
+    """Fire-and-forget: emit escrow.completed event."""
+    from app.services.event_bus import emit_event, EVENT_ESCROW_COMPLETED
+
+    try:
+        data = {
+            "escrow_id": escrow.id,
+            "property_id": escrow.property_id,
+            "amount_kes": float(escrow.amount_kes),
+            "buyer_id": escrow.buyer_id,
+            "seller_id": escrow.seller_id,
+        }
+        await emit_event(
+            event_type=EVENT_ESCROW_COMPLETED,
+            user_id=escrow.buyer_id,
+            data=data,
+        )
+    except Exception:
+        logger.warning(
+            '{"event":"bg_escrow_event_failed","escrow_id":%d}',
+            escrow.id,
+        )

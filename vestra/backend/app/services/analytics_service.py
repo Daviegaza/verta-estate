@@ -170,3 +170,121 @@ async def get_search_conversion_rate(db: AsyncSession) -> dict:
         "searches_with_clicks": click_count,
         "ctr_pct": round((click_count / max(total_count, 1)) * 100, 1),
     }
+
+
+# ── Fire-and-Forget Wrappers ─────────────────────────────────────────────────────
+# These create their own DB sessions so callers can fire them via
+# asyncio.create_task() without blocking the request path.
+
+
+async def fire_and_forget_track_search(
+    user_id: Optional[int],
+    query: str,
+    filters_applied: Optional[dict] = None,
+    results_count: int = 0,
+    clicked_property_id: Optional[int] = None,
+    session_id: Optional[str] = None,
+) -> None:
+    """Fire-and-forget: record a search with its own DB session."""
+    from app.core.database import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await track_search(
+                db,
+                user_id=user_id,
+                query=query,
+                session_id=session_id or "unknown",
+                filters_applied=filters_applied or {},
+                results_count=results_count,
+                clicked_property_id=clicked_property_id,
+            )
+    except Exception:
+        logger.warning(
+            '{"event":"ff_track_search_failed","query":"%s"}',
+            query[:100] if query else "",
+            exc_info=True,
+        )
+
+
+async def fire_and_forget_track_user_event(
+    user_id: Optional[int],
+    event_type: str,
+    event_data: Optional[dict] = None,
+    session_id: Optional[str] = None,
+) -> None:
+    """Fire-and-forget: record a user event with its own DB session."""
+    from app.core.database import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await track_event(
+                db,
+                user_id=user_id,
+                session_id=session_id or "unknown",
+                event_type=event_type,
+                event_data=event_data or {},
+                client_timestamp=datetime.now(timezone.utc),
+            )
+    except Exception:
+        logger.warning(
+            '{"event":"ff_track_user_event_failed","event_type":"%s"}',
+            event_type,
+            exc_info=True,
+        )
+
+
+async def fire_and_forget_track_price_change(
+    property_id: int,
+    old_price: float,
+    new_price: float,
+    changed_by_id: int,
+    reason: Optional[str] = None,
+) -> None:
+    """Fire-and-forget: record a price change with its own DB session."""
+    from app.core.database import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await track_price_change(
+                db,
+                property_id=property_id,
+                old_price=old_price,
+                new_price=new_price,
+                changed_by_id=changed_by_id,
+                reason=reason,
+            )
+    except Exception:
+        logger.warning(
+            '{"event":"ff_track_price_change_failed","property_id":%d}',
+            property_id,
+            exc_info=True,
+        )
+
+
+async def fire_and_forget_track_verification_outcome(
+    verification_id: int,
+    ai_prediction: dict,
+    human_decision: str,
+    was_correct: Optional[bool] = None,
+    ground_truth_notes: Optional[str] = None,
+) -> None:
+    """Fire-and-forget: record a verification outcome with its own DB session."""
+    from app.core.database import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await track_verification_outcome(
+                db,
+                verification_id=verification_id,
+                ai_prediction=ai_prediction,
+                human_decision=human_decision,
+                was_correct=was_correct,
+                ground_truth_notes=ground_truth_notes,
+            )
+    except Exception:
+        logger.warning(
+            '{"event":"ff_track_verification_outcome_failed","verification_id":%d}',
+            verification_id,
+            exc_info=True,
+        )

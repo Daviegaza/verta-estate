@@ -56,8 +56,8 @@ class Subscription(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    user = relationship("User", lazy="selectin")
-    last_payment = relationship("Payment", lazy="selectin", foreign_keys=[last_payment_id])
+    user = relationship("User")
+    last_payment = relationship("Payment", foreign_keys=[last_payment_id])
 
     def __repr__(self):
         return f"<Subscription #{self.id} user={self.user_id} tier={self.tier.value} status={self.status.value}>"

@@ -11,6 +11,7 @@ class UserCreate(BaseModel):
     password: str
     role: UserRole = UserRole.buyer
     turnstile_token: Optional[str] = None  # Cloudflare Turnstile CAPTCHA token
+    referral_code: Optional[str] = None  # Referral code from another user
 
     @field_validator("password")
     @classmethod
@@ -111,3 +112,13 @@ class ChangePasswordRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class TokenRefreshResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"

@@ -1,4 +1,5 @@
 from datetime import timezone
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Optional
@@ -6,6 +7,8 @@ from app.models.user import User, UserRole
 from app.models.property import AgentProfile
 from app.schemas.user import UserCreate, UserUpdate, AgentProfileCreate
 from app.core.security import get_password_hash, verify_password
+
+logger = logging.getLogger("vestra")
 
 
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
@@ -23,7 +26,11 @@ async def get_user_by_phone(db: AsyncSession, phone: str) -> Optional[User]:
     return result.scalar_one_or_none()
 
 
-async def create_user(db: AsyncSession, user_data: UserCreate) -> User:
+async def create_user(
+    db: AsyncSession,
+    user_data: UserCreate,
+    referral_code: Optional[str] = None,
+) -> User:
     hashed_password = get_password_hash(user_data.password)
     user = User(
         email=user_data.email,
@@ -35,6 +42,24 @@ async def create_user(db: AsyncSession, user_data: UserCreate) -> User:
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    # ── Referral flow ──────────────────────────────────────────────────────────
+    if referral_code:
+        from app.services.referral_engine import track_referral_signup, award_referral_reward
+
+        track_result = await track_referral_signup(db, user.id, referral_code)
+        if track_result:
+            logger.info(
+                '{"event":"referral_flow_triggered","user_id":%d,"referrer_id":%d,"action":"signup_verified"}',
+                user.id, track_result["referrer_id"],
+            )
+            await award_referral_reward(db, user.id, "signup_verified")
+        else:
+            logger.warning(
+                '{"event":"referral_code_invalid","user_id":%d,"code":"%s"}',
+                user.id, referral_code,
+            )
+
     return user
 
 

@@ -2,6 +2,10 @@
  * Vestra Service Worker v2
  * Provides offline support, caching, and PWA installability.
  * Works on iOS (Safari), Android (Chrome), and desktop.
+ *
+ * NOTE: This file should only be served in production. In development,
+ * the ServiceWorkerRegister component skips registration entirely and
+ * unregisters any existing service workers to prevent stale chunk errors.
  */
 const CACHE_VERSION = 'v3';
 const CACHE_NAME = `vestra-${CACHE_VERSION}-${Date.now()}`;

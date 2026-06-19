@@ -72,10 +72,16 @@ class TestPaymentInitiate:
             },
             headers={"Authorization": f"Bearer {token}"},
         )
-        # Will fail without real M-Pesa credentials, but should return properly
-        assert response.status_code in (200, 500, 502)
+        # Will fail without real M-Pesa credentials, but should return a structured error
+        # (400 = validation/config error), not a 500-level server crash
+        assert response.status_code in (200, 400, 502), (
+            f"Expected 200, 400, or 502, got {response.status_code}: {response.text[:200]}"
+        )
         data = response.json()
-        assert "payment_id" in data or "detail" in data
+        if response.status_code == 200:
+            assert "payment_id" in data
+        else:
+            assert "detail" in data or "message" in data
 
     async def test_initiate_without_auth(self, client: AsyncClient):
         """Payment initiation without authentication is rejected."""

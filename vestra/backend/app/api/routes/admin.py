@@ -159,7 +159,7 @@ async def list_all_users(
 @router.put("/users/{user_id}/role")
 async def change_user_role(
     user_id: int,
-    role: str = Query(..., regex="^(buyer|seller|agent|landlord|admin|super_admin)$"),
+    role: str = Query(..., pattern="^(buyer|seller|agent|landlord|admin|super_admin)$"),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -244,7 +244,7 @@ async def list_all_properties_admin(
 @router.put("/properties/{property_id}/status")
 async def set_property_status(
     property_id: int,
-    status: str = Query(..., regex="^(draft|pending_review|active|suspended|sold|rented)$"),
+    status: str = Query(..., pattern="^(draft|pending_review|active|suspended|sold|rented)$"),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -451,7 +451,7 @@ async def list_fraud_reports(
 @router.put("/fraud-reports/{report_id}/review")
 async def review_fraud_report(
     report_id: int,
-    status: str = Query(..., regex="^(pending|investigating|confirmed|false_report)$"),
+    status: str = Query(..., pattern="^(pending|investigating|confirmed|false_report)$"),
     notes: Optional[str] = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
@@ -499,7 +499,7 @@ async def list_pending_kyc(
 @router.put("/kyc/{kyc_id}/review")
 async def review_kyc(
     kyc_id: int,
-    status: str = Query(..., regex="^(approved|rejected)$"),
+    status: str = Query(..., pattern="^(approved|rejected)$"),
     rejection_reason: Optional[str] = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
@@ -553,7 +553,7 @@ async def list_pending_verifications(
 @router.put("/verifications/{verification_id}/review")
 async def review_verification(
     verification_id: int,
-    status: str = Query(..., regex="^(approved|flagged|rejected)$"),
+    status: str = Query(..., pattern="^(approved|flagged|rejected)$"),
     notes: Optional[str] = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),

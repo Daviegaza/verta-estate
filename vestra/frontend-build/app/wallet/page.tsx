@@ -11,6 +11,7 @@ import type { Payment, PaymentStatus } from '@/types';
 import {
   Wallet, ArrowDown, ArrowUp, Clock, CheckCircle, XCircle, ShieldCheck, Filter, Download
 } from 'lucide-react';
+import { formatCurrency, formatDate } from '@/lib/utils';
 
 interface PaymentSummary {
   totalSpent: number;
@@ -90,6 +91,30 @@ function WalletContent() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Date', 'Description', 'Amount', 'Status', 'Method'];
+    const rows = filteredPayments.map((p) => [
+      formatDate(p.created_at),
+      getPurposeLabel(p.purpose),
+      formatCurrency(p.amount, p.currency),
+      p.status,
+      p.method,
+    ]);
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((r) => r.map((cell) => `"${cell}"`).join(',')),
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `wallet-payments-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const filteredPayments = statusFilter === 'all'
@@ -312,7 +337,7 @@ function WalletContent() {
                   Download your complete payment history for records or accounting.
                 </p>
               </div>
-              <Button variant="outline" size="sm" className="flex-shrink-0 whitespace-nowrap">
+              <Button variant="outline" size="sm" className="flex-shrink-0 whitespace-nowrap" onClick={handleExportCSV}>
                 Export CSV
               </Button>
             </div>

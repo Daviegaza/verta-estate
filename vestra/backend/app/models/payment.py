@@ -57,7 +57,7 @@ class Payment(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    user = relationship("User", back_populates="payments", lazy="selectin")
+    user = relationship("User", back_populates="payments")
 
     def __repr__(self):
         return f"<Payment {self.reference} {self.amount} {self.currency}>"

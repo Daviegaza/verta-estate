@@ -162,6 +162,20 @@ class VestraAPIClient {
     return res.data;
   }
 
+  async refreshToken(refreshToken: string): Promise<{
+    access_token: string; refresh_token: string; token_type: string;
+  }> {
+    const res = await this.client.post('/api/auth/refresh', {
+      refresh_token: refreshToken,
+    });
+    return res.data;
+  }
+
+  async logout(): Promise<{ message: string }> {
+    const res = await this.client.post('/api/auth/logout');
+    return res.data;
+  }
+
   // ─── Properties ────────────────────────────────────────────────────────────
 
   async listProperties(params: PropertySearch = {}): Promise<PropertyListResponse> {

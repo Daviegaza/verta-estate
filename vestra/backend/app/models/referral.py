@@ -26,8 +26,8 @@ class Referral(Base):
     signup_at = Column(DateTime(timezone=True), server_default=func.now())
     converted_at = Column(DateTime(timezone=True), nullable=True)
 
-    referrer = relationship("User", foreign_keys=[referrer_id], lazy="selectin")
-    referred_user = relationship("User", foreign_keys=[referred_user_id], lazy="selectin")
+    referrer = relationship("User", foreign_keys=[referrer_id])
+    referred_user = relationship("User", foreign_keys=[referred_user_id])
 
 
 class ReferralReward(Base):
@@ -42,4 +42,4 @@ class ReferralReward(Base):
     description = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    referral = relationship("Referral", lazy="selectin")
+    referral = relationship("Referral")

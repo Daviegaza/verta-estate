@@ -412,19 +412,27 @@ export default function PropertyDetailPage() {
                     </Button>
                   ) : (
                     <div className="space-y-3">
-                      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                        <Phone className="w-4 h-4 text-emerald-600" />
-                        <div>
-                          <p className="text-xs text-gray-500">Phone</p>
-                          <p className="text-sm font-semibold text-gray-900">+254 7XX XXX XXX</p>
-                        </div>
-                      </div>
-                      <Button fullWidth variant="outline" leftIcon={<MessageCircle className="w-4 h-4" />}>
-                        Send Message
-                      </Button>
-                      <Button fullWidth className="bg-green-500 hover:bg-green-600 text-white">
-                        WhatsApp
-                      </Button>
+                      {property.owner_phone ? (
+                        <>
+                          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                            <Phone className="w-4 h-4 text-emerald-600" />
+                            <div>
+                              <p className="text-xs text-gray-500">Phone</p>
+                              <p className="text-sm font-semibold text-gray-900">{property.owner_phone}</p>
+                            </div>
+                          </div>
+                          <Button fullWidth variant="outline" leftIcon={<MessageCircle className="w-4 h-4" />}>
+                            Send Message
+                          </Button>
+                          <Button fullWidth className="bg-green-500 hover:bg-green-600 text-white">
+                            WhatsApp
+                          </Button>
+                        </>
+                      ) : (
+                        <Button fullWidth leftIcon={<MessageCircle className="w-4 h-4" />}>
+                          Contact via Message
+                        </Button>
+                      )}
                     </div>
                   )}
                   <p className="text-xs text-gray-400 mt-3 text-center">

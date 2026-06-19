@@ -19,4 +19,4 @@ class TitleChainBlock(Base):
     validator = Column(String(50), default="VESTRA_AI")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    property = relationship("Property", lazy="selectin")
+    property = relationship("Property")

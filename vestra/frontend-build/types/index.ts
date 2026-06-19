@@ -29,6 +29,8 @@ export type PropertyStatus = 'draft' | 'pending_review' | 'active' | 'suspended'
 export interface Property {
   id: number;
   owner_id: number;
+  owner_name?: string;
+  owner_phone?: string;
   title: string;
   description?: string;
   property_type: PropertyType;

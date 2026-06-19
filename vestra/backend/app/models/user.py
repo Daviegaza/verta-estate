@@ -33,10 +33,10 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    properties = relationship("Property", back_populates="owner", lazy="selectin")
-    verifications = relationship("Verification", back_populates="user", lazy="selectin", foreign_keys="[Verification.user_id]")
-    payments = relationship("Payment", back_populates="user", lazy="selectin")
-    agent_profile = relationship("AgentProfile", back_populates="user", uselist=False, lazy="selectin")
+    properties = relationship("Property", back_populates="owner", cascade="all, delete-orphan")
+    verifications = relationship("Verification", back_populates="user", foreign_keys="[Verification.user_id]", cascade="all, delete-orphan")
+    payments = relationship("Payment", back_populates="user", cascade="all, delete-orphan")
+    agent_profile = relationship("AgentProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User {self.email}>"

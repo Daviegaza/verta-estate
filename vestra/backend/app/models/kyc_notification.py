@@ -45,8 +45,8 @@ class KYCVerification(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    user = relationship("User", foreign_keys=[user_id], lazy="selectin")
-    reviewer = relationship("User", foreign_keys=[reviewer_id], lazy="selectin")
+    user = relationship("User", foreign_keys=[user_id])
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
 
 
 class Notification(Base):
@@ -67,7 +67,7 @@ class Notification(Base):
     channel = Column(String(20), default="in_app")  # in_app, email, whatsapp, sms
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", lazy="selectin")
+    user = relationship("User")
 
 
 class Message(Base):
@@ -84,9 +84,9 @@ class Message(Base):
     read_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    sender = relationship("User", foreign_keys=[sender_id], lazy="selectin")
-    receiver = relationship("User", foreign_keys=[receiver_id], lazy="selectin")
-    property = relationship("Property", lazy="selectin")
+    sender = relationship("User", foreign_keys=[sender_id])
+    receiver = relationship("User", foreign_keys=[receiver_id])
+    property = relationship("Property")
 
 
 class SavedProperty(Base):
@@ -99,8 +99,8 @@ class SavedProperty(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", lazy="selectin")
-    property = relationship("Property", lazy="selectin")
+    user = relationship("User")
+    property = relationship("Property")
 
     __table_args__ = (
         # One save per user per property
@@ -121,4 +121,4 @@ class SavedSearch(Base):
     last_notified_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", lazy="selectin")
+    user = relationship("User")

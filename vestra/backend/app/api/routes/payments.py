@@ -14,7 +14,8 @@ from app.services.verification_service import (
 )
 from app.models.payment import PaymentPurpose, PaymentStatus
 from app.models.user import UserRole
-from app.core.redis import cache_delete
+from app.core.redis import cache_delete, check_and_mark_processed
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -32,10 +33,6 @@ SAFARICOM_IPS = {
 
 # Sandbox IPs are the same range
 SAFARICOM_SANDBOX_IPS = {"196.201.214.200"}
-
-# Set of processed checkout_request_ids for replay protection
-# In production, use Redis with TTL instead of in-memory set
-_PROCESSED_CALLBACKS: set = set()
 
 
 def _verify_safaricom_ip(client_ip: str) -> bool:
@@ -136,27 +133,30 @@ async def mpesa_callback(
         )
         return {"ResultCode": 0, "ResultDesc": "Accepted"}
 
-    # ── Replay protection ─────────────────────────────────────────────────
+    # ── Replay protection (Redis atomic SET NX, shared across all workers) ──
     checkout_id = (
         callback_data.get("Body", {}).get("stkCallback", {}).get("CheckoutRequestID", "")
     )
-    if checkout_id and checkout_id in _PROCESSED_CALLBACKS:
-        logger.warning(
-            '{"event":"mpesa_callback_blocked","reason":"replay","checkout_id":"%s"}',
-            checkout_id
-        )
-        return {"ResultCode": 0, "ResultDesc": "Accepted"}
     if checkout_id:
-        _PROCESSED_CALLBACKS.add(checkout_id)
-        # Keep set bounded (prune if >10000 entries)
-        if len(_PROCESSED_CALLBACKS) > 10000:
-            _PROCESSED_CALLBACKS.clear()
+        is_new = await check_and_mark_processed(f"mpesa:{checkout_id}", ttl=86400)
+        if not is_new:
+            logger.warning(
+                '{"event":"mpesa_callback_blocked","reason":"replay","checkout_id":"%s"}',
+                checkout_id
+            )
+            return {"ResultCode": 0, "ResultDesc": "Accepted"}
 
     # ── Process payment ───────────────────────────────────────────────────
     payment = await handle_mpesa_callback(db, callback_data)
 
     if payment and payment.status == PaymentStatus.completed:
         ref_id = payment.payment_metadata.get("reference_id") if payment.payment_metadata else None
+
+        # ── Fire event bus: payment completed ──────────────────────────────
+        from app.services.event_bus import emit_event, EVENT_PAYMENT_COMPLETED
+        asyncio.create_task(
+            _bg_emit_event_after_payment(payment)
+        )
 
         # Handle verification report payment
         if payment.purpose == PaymentPurpose.verification_report and ref_id:
@@ -182,6 +182,16 @@ async def mpesa_callback(
                         payment_method="mpesa",
                         mpesa_phone=payment.phone_number,
                     )
+                    # ── Referral reward: first subscription payment ──────
+                    from app.services.referral_engine import award_referral_reward
+                    reward_result = await award_referral_reward(db, user.id, "first_payment")
+                    if reward_result:
+                        logger.info(
+                            '{"event":"referral_reward_for_payment","referrer":%d,'
+                            '"referred":%d,"amount_kes":%d}',
+                            reward_result["referrer_id"], user.id,
+                            reward_result["reward_kes"],
+                        )
 
         # Handle listing fee payment → activate featured listing
         if payment.purpose == PaymentPurpose.listing_fee and ref_id:
@@ -223,3 +233,30 @@ async def my_payments(
     db: AsyncSession = Depends(get_db),
 ):
     return await get_user_payments(db, current_user.id)
+
+
+# ── Background event helpers ──────────────────────────────────────────────────
+
+
+async def _bg_emit_event_after_payment(payment) -> None:
+    """Fire-and-forget: emit payment.completed event."""
+    from app.services.event_bus import emit_event, EVENT_PAYMENT_COMPLETED
+
+    try:
+        data = {
+            "payment_id": payment.id,
+            "amount": float(payment.amount),
+            "purpose": payment.purpose.value if payment.purpose else "unknown",
+            "currency": payment.currency,
+            "phone": payment.phone_number,
+        }
+        await emit_event(
+            event_type=EVENT_PAYMENT_COMPLETED,
+            user_id=payment.user_id,
+            data=data,
+        )
+    except Exception:
+        logger.warning(
+            '{"event":"bg_payment_event_failed","payment_id":%d}',
+            payment.id,
+        )

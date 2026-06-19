@@ -102,13 +102,14 @@ async def record_api_key_usage(
     """Record API key usage for analytics."""
     # Track in Redis for real-time rate limiting and analytics
     from app.core.redis import get_redis
-    try:
-        r = await get_redis()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        await r.hincrby(f"vestra:api_usage:{api_key_id}:{today}", endpoint, 1)
-        await r.expire(f"vestra:api_usage:{api_key_id}:{today}", 86400 * 7)  # 7-day TTL
-    except Exception:
-        pass
+    r = await get_redis()
+    if r is not None:
+        try:
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            await r.hincrby(f"vestra:api_usage:{api_key_id}:{today}", endpoint, 1)
+            await r.expire(f"vestra:api_usage:{api_key_id}:{today}", 86400 * 7)
+        except Exception:
+            pass
 
 
 async def get_user_keys(db: AsyncSession, user_id: int) -> list[APIKey]:
@@ -153,14 +154,15 @@ async def get_api_key_usage(
 
     for key in keys:
         key_usage = {}
-        for d in range(days):
-            day = (datetime.now(timezone.utc) - timedelta(days=d)).strftime("%Y-%m-%d")
-            try:
-                daily = await r.hgetall(f"vestra:api_usage:{key.id}:{day}")
-                key_usage[day] = sum(int(v) for v in daily.values())
-                total_calls += key_usage.get(day, 0)
-            except Exception:
-                key_usage[day] = 0
+        if r is not None:
+            for d in range(days):
+                day = (datetime.now(timezone.utc) - timedelta(days=d)).strftime("%Y-%m-%d")
+                try:
+                    daily = await r.hgetall(f"vestra:api_usage:{key.id}:{day}")
+                    key_usage[day] = sum(int(v) for v in daily.values())
+                    total_calls += key_usage.get(day, 0)
+                except Exception:
+                    key_usage[day] = 0
 
         usage_data.append({
             "key_id": key.id,

@@ -89,36 +89,37 @@ async def login(form_data: UserLogin, request: Request, db: AsyncSession = Depen
     client_ip = request.client.host if request.client else "unknown"
     lockout_key = f"vestra:lockout:{form_data.email}:{client_ip}"
 
-    # ── Account lockout check ──────────────────────────────────────────────
+    # ── Account lockout check (Redis-backed, fails open if Redis down) ─────
     r = await get_redis()
-    lockout_count_str = await r.get(f"{lockout_key}:count")
-    lockout_count = int(lockout_count_str) if lockout_count_str else 0
+    if r is not None:
+        lockout_count_str = await r.get(f"{lockout_key}:count")
+        lockout_count = int(lockout_count_str) if lockout_count_str else 0
 
-    if lockout_count >= settings.ACCOUNT_LOCKOUT_MAX_ATTEMPTS:
-        ttl = await r.ttl(f"{lockout_key}:count")
-        retry_after = max(ttl, 0)
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "error": "account_locked",
-                "message": f"Too many failed login attempts. Please try again in {retry_after // 60 + 1} minutes.",
-                "retry_after_seconds": retry_after,
-            },
-            headers={"Retry-After": str(retry_after)},
-        )
+        if lockout_count >= settings.ACCOUNT_LOCKOUT_MAX_ATTEMPTS:
+            ttl = await r.ttl(f"{lockout_key}:count")
+            retry_after = max(ttl, 0)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "error": "account_locked",
+                    "message": f"Too many failed login attempts. Please try again in {retry_after // 60 + 1} minutes.",
+                    "retry_after_seconds": retry_after,
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
 
     user = await authenticate_user(db, form_data.email, form_data.password)
     if not user:
-        # ── Increment failure counter ────────────────────────────────────
-        lockout_duration = settings.ACCOUNT_LOCKOUT_DURATION_MINUTES * 60
-        new_count = await r.incr(f"{lockout_key}:count")
-        await r.expire(f"{lockout_key}:count", lockout_duration)
-        remaining = max(0, settings.ACCOUNT_LOCKOUT_MAX_ATTEMPTS - new_count)
+        # ── Increment failure counter (only if Redis available) ──────────
+        if r is not None:
+            lockout_duration = settings.ACCOUNT_LOCKOUT_DURATION_MINUTES * 60
+            await r.incr(f"{lockout_key}:count")
+            await r.expire(f"{lockout_key}:count", lockout_duration)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
                 "error": "invalid_credentials",
-                "message": f"Incorrect email or password. {remaining} attempt(s) remaining before account is locked.",
+                "message": "Incorrect email or password.",
             },
         )
     if not user.is_active:
@@ -139,7 +140,8 @@ async def login(form_data: UserLogin, request: Request, db: AsyncSession = Depen
             )
 
     # ── Reset lockout counter on successful login ──────────────────────────
-    await r.delete(f"{lockout_key}:count")
+    if r is not None:
+        await r.delete(f"{lockout_key}:count")
 
     token = create_access_token({"sub": str(user.id)}, client_ip=client_ip)
     return Token(access_token=token, user=UserResponse.model_validate(user))

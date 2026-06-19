@@ -218,47 +218,51 @@ function DashboardContent() {
                   Quick Actions
                 </h3>
               </div>
-              <div className="divide-y divide-gray-50 mt-1">
+              <div className="space-y-1.5 mt-1">
                 {[
                   {
                     label: 'Verify a Property',
                     desc: 'KES 500 — AI Trust Report',
-                    icon: <ShieldCheck className="w-4 h-4 text-emerald-600" />,
+                    icon: <ShieldCheck className="w-4 h-4" />,
                     href: '/verify',
-                    color: 'hover:bg-emerald-50/50',
+                    bg: 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100',
+                    iconBg: 'bg-emerald-600 text-white',
                   },
                   {
                     label: 'Browse Market',
                     desc: 'Search verified listings',
-                    icon: <Search className="w-4 h-4 text-blue-600" />,
+                    icon: <Search className="w-4 h-4" />,
                     href: '/market',
-                    color: 'hover:bg-blue-50/50',
+                    bg: 'bg-blue-50 border-blue-200 hover:bg-blue-100',
+                    iconBg: 'bg-blue-600 text-white',
                   },
                   {
                     label: 'Add Listing',
                     desc: 'Sell or rent your property',
-                    icon: <Plus className="w-4 h-4 text-purple-600" />,
+                    icon: <Plus className="w-4 h-4" />,
                     href: '/properties/new',
-                    color: 'hover:bg-purple-50/50',
+                    bg: 'bg-purple-50 border-purple-200 hover:bg-purple-100',
+                    iconBg: 'bg-purple-600 text-white',
                   },
                   {
                     label: 'Subscription Plans',
                     desc: 'Upgrade your account',
-                    icon: <Star className="w-4 h-4 text-amber-600" />,
+                    icon: <Star className="w-4 h-4" />,
                     href: '/subscription',
-                    color: 'hover:bg-amber-50/50',
+                    bg: 'bg-amber-50 border-amber-200 hover:bg-amber-100',
+                    iconBg: 'bg-amber-600 text-white',
                   },
                 ].map(action => (
                   <Link key={action.label} href={action.href}>
-                    <div className={`flex items-center gap-3 px-1 py-3 rounded-xl transition-all cursor-pointer group ${action.color}`}>
-                      <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm group-hover:shadow transition-all">
+                    <div className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all cursor-pointer group border ${action.bg}`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm group-hover:shadow-md transition-all ${action.iconBg}`}>
                         {action.icon}
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 group-hover:text-emerald-700 transition-colors">{action.label}</p>
-                        <p className="text-xs text-gray-500">{action.desc}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-gray-900">{action.label}</p>
+                        <p className="text-xs text-gray-600 mt-0.5">{action.desc}</p>
                       </div>
-                      <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all ml-auto flex-shrink-0" />
+                      <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-gray-700 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
                     </div>
                   </Link>
                 ))}

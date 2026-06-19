@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { cn, formatCurrency, getListingTypeLabel, getPropertyTypeLabel, getBadgeColor } from '@/lib/utils';
 import type { Property } from '@/types';
@@ -36,7 +36,7 @@ export function PropertyCardSkeleton() {
   );
 }
 
-export default function PropertyCard({ property, className }: PropertyCardProps) {
+function PropertyCard({ property, className }: PropertyCardProps) {
   const [isLiked, setIsLiked] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
 
@@ -226,6 +226,8 @@ export default function PropertyCard({ property, className }: PropertyCardProps)
     </Link>
   );
 }
+
+export default React.memo(PropertyCard);
 
 function formatTimeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();

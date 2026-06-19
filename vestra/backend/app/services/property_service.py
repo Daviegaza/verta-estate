@@ -237,13 +237,24 @@ def _hash_search(search: PropertySearch) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
-async def get_owner_properties(db: AsyncSession, owner_id: int) -> List[Property]:
+async def get_owner_properties(
+    db: AsyncSession, owner_id: int, skip: int = 0, limit: int = 50,
+) -> dict:
+    """Get properties owned by a user with pagination."""
+    count_result = await db.execute(
+        select(func.count(Property.id))
+        .where(Property.owner_id == owner_id)
+    )
+    total = count_result.scalar_one()
+
     result = await db.execute(
         select(Property)
         .where(Property.owner_id == owner_id)
         .order_by(Property.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
-    return result.scalars().all()
+    return {"items": result.scalars().all(), "total": total}
 
 
 async def count_properties(db: AsyncSession, status: str = None) -> int:
@@ -272,10 +283,14 @@ async def count_verified_properties(db: AsyncSession) -> int:
 
 
 async def increment_property_views(db: AsyncSession, property_id: int) -> None:
-    prop = await get_property_by_id(db, property_id)
-    if prop:
-        prop.views += 1
-        await db.commit()
+    """Increment view counter inline — avoids loading full Property row (with JSON arrays)."""
+    from sqlalchemy import update as sql_update
+    await db.execute(
+        sql_update(Property)
+        .where(Property.id == property_id)
+        .values(views=Property.views + 1)
+    )
+    await db.commit()
 
 
 # ─── Admin Functions ───────────────────────────────────────────────────────────

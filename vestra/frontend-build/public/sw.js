@@ -56,13 +56,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: Network-first (chunks already have content hashes for cache busting)
-  // Using network-first prevents stale cached chunks from breaking the app
+  // Static assets: Cache-first (filenames contain content hashes, so cache is never stale)
+  // Subsequent loads serve from cache in <1ms instead of hitting the network
   if (
     url.pathname.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/) ||
     url.pathname.startsWith('/_next/static/')
   ) {
-    event.respondWith(networkFirst(request));
+    event.respondWith(cacheFirst(request));
     return;
   }
 

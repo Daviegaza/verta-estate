@@ -57,44 +57,37 @@ async def full_text_search(
     sanitized = _sanitize_tsquery(query)
     ts_query = _to_tsquery(sanitized)
 
-    # Base query — only active listings
-    from_clause = text("properties")
-    where_parts = ["properties.status = 'active'"]
-
     params: dict = {"limit": size, "offset": (page - 1) * size}
 
-    if ts_query:
-        where_parts.append(
-            "to_tsvector('english', coalesce(properties.title,'') || ' ' || "
-            "coalesce(properties.description,'') || ' ' || "
-            "coalesce(properties.address,'') || ' ' || "
-            "coalesce(properties.city,'') || ' ' || "
-            "coalesce(properties.county,'')) @@ plainto_tsquery('english', :query_text)"
-        )
-        params["query_text"] = sanitized
-        # Add relevance ranking
-        rank_expr = (
-            "ts_rank(to_tsvector('english', "
-            "coalesce(properties.title,'') || ' ' || "
-            "coalesce(properties.description,'') || ' ' || "
-            "coalesce(properties.address,'') || ' ' || "
-            "coalesce(properties.city,'') || ' ' || "
-            "coalesce(properties.county,'')), "
-            "plainto_tsquery('english', :query_text))"
-        )
-    else:
-        # Fallback to ILIKE
-        like_term = f"%{sanitized}%"
-        where_parts.append(
-            "(properties.title ILIKE :like_term OR "
-            "properties.description ILIKE :like_term OR "
-            "properties.address ILIKE :like_term OR "
-            "properties.city ILIKE :like_term)"
-        )
-        params["like_term"] = like_term
-        rank_expr = "1.0"
+    # ── FTS tsvector expression (defined once, used in CTE) ──
+    tsvector_expr = (
+        "to_tsvector('english', "
+        "coalesce(properties.title,'') || ' ' || "
+        "coalesce(properties.description,'') || ' ' || "
+        "coalesce(properties.address,'') || ' ' || "
+        "coalesce(properties.city,'') || ' ' || "
+        "coalesce(properties.county,''))"
+    )
 
-    # Filters
+    # Build WHERE clauses for the inner query
+    where_parts = ["properties.status = 'active'"]
+
+    if ts_query:
+        params["query_text"] = sanitized
+        # tsquery filtering happens in outer query after CTE computes tsvector once
+    else:
+        # Fallback to ILIKE (no tsquery — use simple ILIKE matching)
+        if sanitized:
+            like_term = f"%{sanitized}%"
+            where_parts.append(
+                "(properties.title ILIKE :like_term OR "
+                "properties.description ILIKE :like_term OR "
+                "properties.address ILIKE :like_term OR "
+                "properties.city ILIKE :like_term)"
+            )
+            params["like_term"] = like_term
+
+    # Filters (applied in inner query for both FTS and ILIKE paths)
     if city:
         where_parts.append("properties.city ILIKE :city_filter")
         params["city_filter"] = f"%{city}%"
@@ -118,19 +111,43 @@ async def full_text_search(
 
     where_clause = " AND ".join(where_parts)
 
-    # Count query
-    count_sql = f"SELECT COUNT(*) FROM {from_clause} WHERE {where_clause}"
+    if ts_query:
+        # ── CTE path: compute tsvector ONCE per row, filter + rank from CTE ──
+        select_sql = f"""
+            WITH fts AS (
+                SELECT *, ({tsvector_expr}) AS search_vector
+                FROM properties
+                WHERE {where_clause}
+            )
+            SELECT *, ts_rank(search_vector, plainto_tsquery('english', :query_text)) AS relevance
+            FROM fts
+            WHERE search_vector @@ plainto_tsquery('english', :query_text)
+            ORDER BY relevance DESC, created_at DESC
+            LIMIT :limit OFFSET :offset
+        """
+        count_sql = f"""
+            WITH fts AS (
+                SELECT *, ({tsvector_expr}) AS search_vector
+                FROM properties
+                WHERE {where_clause}
+            )
+            SELECT COUNT(*) FROM fts
+            WHERE search_vector @@ plainto_tsquery('english', :query_text)
+        """
+    else:
+        # ── ILIKE path (no full-text search) ──
+        select_sql = f"""
+            SELECT *, 1.0 AS relevance
+            FROM properties
+            WHERE {where_clause}
+            ORDER BY is_featured DESC, created_at DESC
+            LIMIT :limit OFFSET :offset
+        """
+        count_sql = f"SELECT COUNT(*) FROM properties WHERE {where_clause}"
+
     count_result = await db.execute(text(count_sql), params)
     total = count_result.scalar_one()
 
-    # Select query with ranking
-    select_sql = f"""
-        SELECT properties.*, ({rank_expr}) AS relevance
-        FROM {from_clause}
-        WHERE {where_clause}
-        ORDER BY relevance DESC, properties.created_at DESC
-        LIMIT :limit OFFSET :offset
-    """
     result = await db.execute(text(select_sql), params)
     rows = result.mappings().all()
 

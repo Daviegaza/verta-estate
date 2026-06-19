@@ -17,39 +17,14 @@ import {
   CreditCard, ChevronDown, ChevronRight, LogOut, Smartphone, Key,
   ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
-  ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, Legend,
-} from 'recharts';
+import dynamic from 'next/dynamic';
+
+const OverviewCharts = dynamic(() => import('./OverviewCharts'), {
+  ssr: false,
+  loading: () => <div className="h-64 bg-gray-50 rounded-2xl animate-pulse" />,
+});
 
 type Tab = 'overview' | 'users' | 'properties' | 'payments' | 'verifications' | 'kyc' | 'fraud' | 'audit';
-
-const COLORS = { emerald: '#10b981', blue: '#3b82f6', purple: '#8b5cf6', amber: '#f59e0b', red: '#ef4444', gray: '#6b7280' };
-
-// ─── Confirm Dialog ──────────────────────────────────────────────────────────
-
-function ConfirmDialog({ open, title, message, confirmLabel, onConfirm, onCancel, danger }: {
-  open: boolean; title: string; message: string; confirmLabel: string;
-  onConfirm: () => void; onCancel: () => void; danger?: boolean;
-}) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onCancel}>
-      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4 animate-scale-in" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-gray-900 mb-2">{title}</h3>
-        <p className="text-sm text-gray-500 mb-6">{message}</p>
-        <div className="flex gap-3 justify-end">
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button onClick={onConfirm} className={danger ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}>
-            {confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 
 function getTabFromURL(): Tab {
   if (typeof window === 'undefined') return 'overview';
@@ -188,8 +163,6 @@ function AdminContent() {
     { key: 'audit', label: 'Audit Log', icon: <Activity className="w-4 h-4" /> },
   ];
 
-  const chart = stats?.charts;
-
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto">
@@ -243,19 +216,7 @@ function AdminContent() {
               ))}
             </div>
 
-            <div className="grid lg:grid-cols-3 gap-5">
-              <Card className="lg:col-span-2"><h3 className="font-bold text-gray-900 mb-4 text-sm">Revenue Trend</h3>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={chart?.monthly_revenue || []}><CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" /><XAxis dataKey="month" tick={{fontSize:12}} /><YAxis tick={{fontSize:12}} tickFormatter={v => v>=1000?`${(v/1000).toFixed(0)}K`:v} /><RechartsTooltip formatter={(v:any) => `KES ${Number(v).toLocaleString()}`} /><Bar dataKey="revenue" fill={COLORS.emerald} radius={[4,4,0,0]} /></BarChart>
-                </ResponsiveContainer>
-              </Card>
-              <Card><h3 className="font-bold text-gray-900 mb-3 text-sm">User Roles</h3>
-                <div className="flex justify-center">
-                  <PieChart width={160} height={160}><Pie data={chart?.user_distribution || []} cx={75} cy={75} innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={2}>{(chart?.user_distribution || []).map((d:any,i:number) => <Cell key={i} fill={d.color} />)}</Pie><RechartsTooltip /></PieChart>
-                </div>
-                <div className="space-y-1 mt-2">{(chart?.user_distribution || []).map((d:any) => <div key={d.name} className="flex items-center justify-between text-xs"><div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full" style={{background:d.color}}/><span className="text-gray-600">{d.name}</span></div><span className="font-medium">{d.value}</span></div>)}</div>
-              </Card>
-            </div>
+            <OverviewCharts charts={stats.charts} />
           </div>
         )}
 
@@ -491,6 +452,40 @@ function AdminContent() {
         onConfirm={() => { confirm?.action(); setConfirm(null); }}
         onCancel={() => setConfirm(null)}
       />
+    </div>
+  );
+}
+
+// ── Confirm Dialog ────────────────────────────────────────────────────────
+
+function ConfirmDialog({
+  open, title, message, confirmLabel, danger, onConfirm, onCancel,
+}: {
+  open: boolean; title: string; message: string;
+  confirmLabel?: string; danger?: boolean;
+  onConfirm: () => void; onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-4">
+        <h3 className="text-lg font-bold text-gray-900 mb-2">{title}</h3>
+        <p className="text-gray-600 text-sm mb-6">{message}</p>
+        <div className="flex gap-3 justify-end">
+          <button onClick={onCancel} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`px-4 py-2 text-sm font-medium text-white rounded-xl ${
+              danger ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
+            }`}
+          >
+            {confirmLabel || 'Confirm'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

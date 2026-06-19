@@ -9,6 +9,8 @@ import logging
 logger = logging.getLogger("vestra")
 
 PERFORMANCE_INDEXES = [
+    # ── pg_trgm extension (for fast ILIKE with leading % wildcards) ──
+    "CREATE EXTENSION IF NOT EXISTS pg_trgm",
     # Properties — search and filtering
     "CREATE INDEX IF NOT EXISTS idx_properties_status ON properties (status)",
     "CREATE INDEX IF NOT EXISTS idx_properties_city ON properties (city)",
@@ -24,6 +26,15 @@ PERFORMANCE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_properties_status_city ON properties (status, city)",
     "CREATE INDEX IF NOT EXISTS idx_properties_type_status ON properties (property_type, status)",
     "CREATE INDEX IF NOT EXISTS idx_properties_owner_status ON properties (owner_id, status)",
+    # Listing default sort: WHERE status='active' ORDER BY is_featured DESC, created_at DESC
+    "CREATE INDEX IF NOT EXISTS idx_properties_status_featured_created ON properties (status, is_featured DESC, created_at DESC)",
+    # User's properties sorted by date
+    "CREATE INDEX IF NOT EXISTS idx_properties_owner_created ON properties (owner_id, created_at DESC)",
+    # ── pg_trgm GIN indexes (fast ILIKE %search% with leading wildcard) ──
+    "CREATE INDEX IF NOT EXISTS idx_users_name_trgm ON users USING gin (full_name gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS idx_users_email_trgm ON users USING gin (email gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS idx_properties_city_trgm ON properties USING gin (city gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS idx_properties_county_trgm ON properties USING gin (county gin_trgm_ops)",
     # Users
     "CREATE INDEX IF NOT EXISTS idx_users_role ON users (role)",
     "CREATE INDEX IF NOT EXISTS idx_users_active ON users (is_active)",

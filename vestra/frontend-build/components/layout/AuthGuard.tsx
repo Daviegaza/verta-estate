@@ -40,7 +40,7 @@ export default function AuthGuard({
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isAuthenticated, isHydrated, user, token, logout } = useAuthStore();
+  const { isAuthenticated, isHydrated, user, token, lastVerifiedAt, logout, refreshUser } = useAuthStore();
   const [verified, setVerified] = useState(false);
   const [serverUser, setServerUser] = useState<any>(null);
   const [blocked, setBlocked] = useState(false);
@@ -67,47 +67,32 @@ export default function AuthGuard({
       return;
     }
 
+    // PERF: Skip redundant /me call if store has a recently-verified user
+    // (within last 60s). AuthInit already called getMe() on page mount.
+    const VERIFICATION_TTL = 60_000; // 60 seconds
+    const isRecentlyVerified = user && lastVerifiedAt && (Date.now() - lastVerifiedAt < VERIFICATION_TTL);
+
+    if (isRecentlyVerified) {
+      const serverVerifiedUser = user;
+      setServerUser(serverVerifiedUser);
+      if (!checkAccess(serverVerifiedUser, requireAdmin, requireRoles)) return;
+      setVerified(true);
+      return;
+    }
+
     // Layer 4: Verify token with backend (prevents client-side tampering)
     api.getMe()
       .then((serverVerifiedUser) => {
+        // Update store with fresh verification timestamp
+        refreshUser(); // Updates lastVerifiedAt
         setServerUser(serverVerifiedUser);
 
-        // Layer 5: Check admin requirement against SERVER-VERIFIED role
-        if (requireAdmin) {
-          const role = serverVerifiedUser.role;
-          if (role !== 'admin' && role !== 'super_admin') {
-            setBlocked(true);
-            setBlockReason('Admin access required. Your account does not have admin privileges.');
-            router.replace('/dashboard');
-            return;
-          }
-        }
-
-        // Layer 6: Check specific roles
-        if (requireRoles && requireRoles.length > 0) {
-          const role = serverVerifiedUser.role;
-          if (!requireRoles.includes(role)) {
-            setBlocked(true);
-            setBlockReason(`This area requires one of these roles: ${requireRoles.join(', ')}`);
-            router.replace('/dashboard');
-            return;
-          }
-        }
-
-        // Layer 7: Check if user is active
-        if (!serverVerifiedUser.is_active) {
-          setBlocked(true);
-          setBlockReason('Your account has been suspended. Contact support.');
-          logout();
-          router.replace('/auth/login');
-          return;
-        }
+        if (!checkAccess(serverVerifiedUser, requireAdmin, requireRoles)) return;
 
         // ALL CHECKS PASSED
         setVerified(true);
       })
       .catch((err) => {
-        // Token invalid or expired
         setBlocked(true);
         if (err?.response?.status === 401 || err?.response?.status === 403) {
           setBlockReason('Your session has expired. Please log in again.');
@@ -120,6 +105,39 @@ export default function AuthGuard({
         }
       });
   }, [isHydrated, isAuthenticated, token, pathname]);
+
+  // ── Access check helper (used both for cached and fresh verification) ─────
+  function checkAccess(serverVerifiedUser: any, requireAdmin?: boolean, requireRoles?: string[]): boolean {
+    if (requireAdmin) {
+      const role = serverVerifiedUser.role;
+      if (role !== 'admin' && role !== 'super_admin') {
+        setBlocked(true);
+        setBlockReason('Admin access required. Your account does not have admin privileges.');
+        router.replace('/dashboard');
+        return false;
+      }
+    }
+
+    if (requireRoles && requireRoles.length > 0) {
+      const role = serverVerifiedUser.role;
+      if (!requireRoles.includes(role)) {
+        setBlocked(true);
+        setBlockReason(`This area requires one of these roles: ${requireRoles.join(', ')}`);
+        router.replace('/dashboard');
+        return false;
+      }
+    }
+
+    if (!serverVerifiedUser.is_active) {
+      setBlocked(true);
+      setBlockReason('Your account has been suspended. Contact support.');
+      logout();
+      router.replace('/auth/login');
+      return false;
+    }
+
+    return true;
+  }
 
   // ── Loading State ────────────────────────────────────────────────────────
   if (!isHydrated || (!verified && !blocked)) {

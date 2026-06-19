@@ -10,7 +10,8 @@ interface AuthState {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  isHydrated: boolean;  // true after persisted state has been loaded from storage
+  isHydrated: boolean;
+  lastVerifiedAt: number | null;  // Timestamp of last successful /me call
 
   login: (email: string, password: string) => Promise<void>;
   register: (data: {
@@ -30,6 +31,7 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       isAuthenticated: false,
       isHydrated: false,
+      lastVerifiedAt: null,
 
       setHydrated: () => set({ isHydrated: true }),
 
@@ -43,6 +45,7 @@ export const useAuthStore = create<AuthState>()(
             token: data.access_token,
             isAuthenticated: true,
             isLoading: false,
+            lastVerifiedAt: Date.now(),
           });
         } catch (err) {
           set({ isLoading: false });
@@ -60,6 +63,7 @@ export const useAuthStore = create<AuthState>()(
             token: data.access_token,
             isAuthenticated: true,
             isLoading: false,
+            lastVerifiedAt: Date.now(),
           });
         } catch (err) {
           set({ isLoading: false });
@@ -76,7 +80,7 @@ export const useAuthStore = create<AuthState>()(
       refreshUser: async () => {
         try {
           const user = await api.getMe();
-          set({ user, isAuthenticated: true });
+          set({ user, isAuthenticated: true, lastVerifiedAt: Date.now() });
         } catch {
           // Only clear auth if the token was actually invalid
           // (server down = don't log out)

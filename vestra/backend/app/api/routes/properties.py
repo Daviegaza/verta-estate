@@ -110,11 +110,16 @@ async def ai_property_search(
 
 @router.get("/my")
 async def my_properties(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    props = await get_owner_properties(db, current_user.id)
-    return [_prop_to_dict(p) for p in props]
+    result = await get_owner_properties(db, current_user.id, skip=skip, limit=limit)
+    return {
+        "items": [_prop_to_dict(p) for p in result["items"]],
+        "total": result["total"],
+    }
 
 
 def _prop_to_dict(prop) -> dict:

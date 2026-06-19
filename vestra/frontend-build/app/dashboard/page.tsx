@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/layout/navbar';
@@ -80,12 +80,12 @@ function DashboardContent() {
 
   if (loading) return <DashboardSkeleton />;
 
-  const verifiedProps = properties.filter(p => p.is_verified).length;
-  const totalViews = properties.reduce((sum, p) => sum + (p.views || 0), 0);
-  const totalSpent = payments
+  const verifiedProps = useMemo(() => properties.filter(p => p.is_verified).length, [properties]);
+  const totalViews = useMemo(() => properties.reduce((sum, p) => sum + (p.views || 0), 0), [properties]);
+  const totalSpent = useMemo(() => payments
     .filter(p => p.status === 'completed')
-    .reduce((sum, p) => sum + p.amount, 0);
-  const activeListings = properties.filter(p => p.status === 'active').length;
+    .reduce((sum, p) => sum + p.amount, 0), [payments]);
+  const activeListings = useMemo(() => properties.filter(p => p.status === 'active').length, [properties]);
 
   const firstName = user?.full_name?.split(' ')[0] || 'there';
 

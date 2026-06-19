@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import Navbar from '@/components/layout/navbar';
 import AuthGuard from '@/components/layout/AuthGuard';
@@ -59,14 +59,14 @@ function AgentDashboardContent() {
     }
   };
 
-  const stats: AgentStats = {
-    activeListings: properties.filter((p) => p.status === 'active').length,
-    totalViews: properties.reduce((sum, p) => sum + (p.views || 0), 0),
-    totalInquiries: properties.reduce((sum, p) => sum + (p.inquiries || 0), 0),
-    earnings: payments
-      .filter((p) => p.status === 'completed' && (p.purpose === 'agent_badge' || p.purpose === 'subscription'))
-      .reduce((sum, p) => sum + p.amount, 0),
-  };
+  const activeListings = useMemo(() => properties.filter((p) => p.status === 'active').length, [properties]);
+  const totalViews = useMemo(() => properties.reduce((sum, p) => sum + (p.views || 0), 0), [properties]);
+  const totalInquiries = useMemo(() => properties.reduce((sum, p) => sum + (p.inquiries || 0), 0), [properties]);
+  const earnings = useMemo(() => payments
+    .filter((p) => p.status === 'completed' && (p.purpose === 'agent_badge' || p.purpose === 'subscription'))
+    .reduce((sum, p) => sum + p.amount, 0), [payments]);
+
+  const stats: AgentStats = { activeListings, totalViews, totalInquiries, earnings };
 
   const firstName = user?.full_name?.split(' ')[0] || 'Agent';
 

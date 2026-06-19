@@ -266,16 +266,31 @@ export default function HomePage() {
               </p>
             </div>
             {[
-              { title: 'Platform', links: ['Browse Properties', 'Verify Property', 'List Property', 'AI Search'] },
-              { title: 'Company', links: ['About Us', 'Blog', 'Careers', 'Press'] },
-              { title: 'Support', links: ['Help Center', 'Contact Us', 'Privacy Policy', 'Terms of Service'] },
+              { title: 'Platform', links: [
+                { label: 'Browse Properties', href: '/market' },
+                { label: 'Verify Property', href: '/verify' },
+                { label: 'List Property', href: '/properties/new' },
+                { label: 'AI Search', href: '/market?ai=1' },
+              ]},
+              { title: 'Company', links: [
+                { label: 'About Us', href: '/#about' },
+                { label: 'Agents', href: '/agents' },
+                { label: 'Enterprise API', href: '/enterprise' },
+                { label: 'Dashboard', href: '/dashboard' },
+              ]},
+              { title: 'Support', links: [
+                { label: 'Help Center', href: '/#faq' },
+                { label: 'Contact Us', href: 'mailto:support@vestra.co.ke' },
+                { label: 'Privacy Policy', href: '/#privacy' },
+                { label: 'Terms of Service', href: '/#terms' },
+              ]},
             ].map((col) => (
               <div key={col.title}>
                 <h4 className="text-white font-semibold mb-4">{col.title}</h4>
                 <ul className="space-y-2">
                   {col.links.map((link) => (
-                    <li key={link}>
-                      <Link href="#" className="text-sm text-gray-500 hover:text-white transition-colors">{link}</Link>
+                    <li key={link.label}>
+                      <Link href={link.href} className="text-sm text-gray-500 hover:text-white transition-colors">{link.label}</Link>
                     </li>
                   ))}
                 </ul>
@@ -283,7 +298,7 @@ export default function HomePage() {
             ))}
           </div>
           <div className="border-t border-gray-800 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-xs text-gray-600">2024 Vestra Technologies Ltd. All rights reserved. Nairobi, Kenya.</p>
+            <p className="text-xs text-gray-600">&copy; 2026 Vestra Technologies Ltd. All rights reserved. Nairobi, Kenya.</p>
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
               <span className="text-xs text-gray-500">Secured and powered by AI</span>

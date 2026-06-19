@@ -1,16 +1,18 @@
 import type { NextConfig } from "next";
 
+const isProd = process.env.NODE_ENV === 'production';
+
 const nextConfig: NextConfig = {
   output: 'standalone',
-  // React Compiler — automatic memoization for free perf (Next.js 16 stable)
-  reactCompiler: true,
-  // Turbopack filesystem cache — faster dev restarts (beta, Next.js 16)
+  // React Compiler — ONLY in production. In dev it uses Babel and makes
+  // hot reload painfully slow (Next.js 16 docs warn about this).
+  reactCompiler: isProd,
+  // Turbopack filesystem cache — faster dev restarts
   experimental: {
-    turbopackFileSystemCacheForDev: true,
+    turbopackFileSystemCacheForDev: !isProd,
   },
   images: {
-    // Use unoptimized for data URIs and local images — faster
-    unoptimized: process.env.NODE_ENV === 'development',
+    unoptimized: true,  // Always fast — skip image optimization in dev AND prod
     remotePatterns: [
       { protocol: 'https', hostname: 'vestra.co.ke' },
       { protocol: 'https', hostname: '*.vestra.co.ke' },

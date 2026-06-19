@@ -6,13 +6,13 @@ import type {
 } from '@/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1000;
+const isDev = process.env.NODE_ENV !== 'production';
+const MAX_RETRIES = isDev ? 1 : 2;       // Dev: 1 retry. Prod: 2 retries.
+const RETRY_DELAY_MS = isDev ? 300 : 800; // Dev: 300ms. Prod: 800ms.
 
 // ── Retry helper ──────────────────────────────────────────────────────────────
 
 function shouldRetry(error: AxiosError, attempt: number): boolean {
-  // Retry on network errors and 5xx responses
   if (attempt >= MAX_RETRIES) return false;
   if (!error.response) return true; // Network error
   const status = error.response.status;
@@ -27,8 +27,8 @@ async function withRetry<T>(fn: () => Promise<T>, attempt = 0): Promise<T> {
   } catch (err) {
     const axiosErr = err as AxiosError;
     if (shouldRetry(axiosErr, attempt)) {
-      const delay = RETRY_DELAY_MS * Math.pow(2, attempt); // Exponential backoff
-      await new Promise((r) => setTimeout(r, delay));
+      // Fast retry — just a short pause
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
       return withRetry(fn, attempt + 1);
     }
     throw err;
@@ -43,7 +43,7 @@ class VestraAPIClient {
   constructor() {
     this.client = axios.create({
       baseURL: BASE_URL,
-      timeout: 30000,
+      timeout: isDev ? 10000 : 30000,  // Dev: 10s max. Prod: 30s.
       headers: { 'Content-Type': 'application/json' },
     });
 

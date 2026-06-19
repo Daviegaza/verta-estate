@@ -17,18 +17,33 @@ from app.core.config import settings
 
 _redis_pool: Optional[aioredis.ConnectionPool] = None
 _redis: Optional[aioredis.Redis] = None
+_redis_unavailable: bool = False  # Fast-fail flag when Redis is down
 
 
-async def get_redis() -> aioredis.Redis:
-    """Return a shared Redis connection (creates the pool on first call)."""
-    global _redis_pool, _redis
+async def get_redis() -> Optional[aioredis.Redis]:
+    """
+    Return a shared Redis connection (creates the pool on first call).
+    Returns None if Redis is unavailable (fast-fail after first failed attempt).
+    """
+    global _redis_pool, _redis, _redis_unavailable
+    if _redis_unavailable:
+        return None
     if _redis is None:
-        _redis_pool = aioredis.ConnectionPool.from_url(
-            settings.REDIS_URL,
-            max_connections=settings.REDIS_MAX_CONNECTIONS,
-            decode_responses=True,
-        )
-        _redis = aioredis.Redis(connection_pool=_redis_pool)
+        try:
+            _redis_pool = aioredis.ConnectionPool.from_url(
+                settings.REDIS_URL,
+                max_connections=settings.REDIS_MAX_CONNECTIONS,
+                decode_responses=True,
+                socket_connect_timeout=2,  # Fast fail — 2 seconds max
+                socket_timeout=3,           # Operations timeout
+            )
+            _redis = aioredis.Redis(connection_pool=_redis_pool)
+            await _redis.ping()
+        except Exception:
+            _redis_unavailable = True
+            _redis = None
+            _redis_pool = None
+            return None
     return _redis
 
 
@@ -53,9 +68,11 @@ def _make_cache_key(prefix: str, *args, **kwargs) -> str:
 
 
 async def cache_get(key: str) -> Optional[Any]:
-    """Get a value from the cache (JSON deserialised)."""
+    """Get a value from the cache (JSON deserialised). Returns None on miss or error."""
+    r = await get_redis()
+    if r is None:
+        return None
     try:
-        r = await get_redis()
         val = await r.get(key)
         return json.loads(val) if val else None
     except Exception:
@@ -63,18 +80,22 @@ async def cache_get(key: str) -> Optional[Any]:
 
 
 async def cache_set(key: str, value: Any, ttl: int = 300) -> None:
-    """Set a value in the cache with a TTL (seconds). JSON serialised."""
+    """Set a value in the cache with a TTL (seconds). Fails silently if Redis down."""
+    r = await get_redis()
+    if r is None:
+        return
     try:
-        r = await get_redis()
         await r.setex(key, ttl, json.dumps(value, default=str))
     except Exception:
         pass  # cache is best-effort
 
 
 async def cache_delete(pattern: str) -> None:
-    """Delete all keys matching a pattern."""
+    """Delete all keys matching a pattern. Fails silently if Redis down."""
+    r = await get_redis()
+    if r is None:
+        return
     try:
-        r = await get_redis()
         cursor = 0
         while True:
             cursor, keys = await r.scan(cursor, match=pattern, count=100)
@@ -122,32 +143,31 @@ class RedisRateLimiter:
 
     async def is_allowed(self, key: str) -> bool:
         """Return True if the request is within limits, False if rate-limited."""
+        r = await get_redis()
+        if r is None:
+            return True  # Redis down — fail open
         try:
-            r = await get_redis()
             now = asyncio.get_event_loop().time()
             window_start = now - self.window
             redis_key = f"vestra:ratelimit:{key}"
 
             async with r.pipeline(transaction=True) as pipe:
-                # Remove entries outside the window
                 pipe.zremrangebyscore(redis_key, 0, window_start)
-                # Count remaining entries
                 pipe.zcard(redis_key)
-                # Add current request with a score of the current timestamp
                 pipe.zadd(redis_key, {str(now): now})
-                # Set expiry on the key
                 pipe.expire(redis_key, self.window + 10)
                 _, count, _, _ = await pipe.execute()
 
             return count <= self.max_requests
         except Exception:
-            # Redis down — allow the request (fail open for UX)
-            return True
+            return True  # Fail open
 
     async def get_remaining(self, key: str) -> int:
         """Return remaining requests in the current window."""
+        r = await get_redis()
+        if r is None:
+            return self.max_requests
         try:
-            r = await get_redis()
             now = asyncio.get_event_loop().time()
             window_start = now - self.window
             redis_key = f"vestra:ratelimit:{key}"

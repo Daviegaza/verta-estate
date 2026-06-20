@@ -19,6 +19,13 @@ os.environ.setdefault("RATE_LIMIT_GENERAL_PER_MINUTE", "99999")
 os.environ.setdefault("RATE_LIMIT_ADMIN_PER_MINUTE", "99999")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")  # Use DB 1 for tests
 
+# ── Test Database URL ────────────────────────────────────────────────────────────
+# Use a separate test database. Set TEST_DATABASE_URL env var to override.
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/vestra_test",
+)
+
 from app.core.config import settings
 from app.core.database import Base
 from app.main import app
@@ -29,14 +36,7 @@ _mw.auth_limiter.max_requests = 999_999
 _mw.general_limiter.max_requests = 999_999
 _mw.admin_limiter.max_requests = 999_999
 
-# ── Test Database URL ────────────────────────────────────────────────────────────
-# Use a separate test database. Set TEST_DATABASE_URL env var to override.
-TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/vestra_test",
-)
-
-# Create test engine and session factory
+# Create test engine and session factory (uses same DB as DATABASE_URL override above)
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, pool_size=5, max_overflow=10)
 TestSessionLocal = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -51,12 +51,21 @@ def event_loop():
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_database():
-    """Create all tables before each test module and drop after."""
+    """Drop and recreate all tables before each test for a clean schema."""
+    from sqlalchemy import text as sa_text
     async with test_engine.begin() as conn:
+        # CASCADE drop to handle foreign key constraints cleanly
+        await conn.execute(sa_text("DROP SCHEMA public CASCADE"))
+        await conn.execute(sa_text("CREATE SCHEMA public"))
+        await conn.execute(sa_text("GRANT ALL ON SCHEMA public TO postgres"))
+        await conn.execute(sa_text("GRANT ALL ON SCHEMA public TO public"))
         await conn.run_sync(Base.metadata.create_all)
     yield
     async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(sa_text("DROP SCHEMA public CASCADE"))
+        await conn.execute(sa_text("CREATE SCHEMA public"))
+        await conn.execute(sa_text("GRANT ALL ON SCHEMA public TO postgres"))
+        await conn.execute(sa_text("GRANT ALL ON SCHEMA public TO public"))
 
 
 @pytest_asyncio.fixture

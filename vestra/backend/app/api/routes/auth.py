@@ -4,6 +4,7 @@ Authentication routes — register, login, password reset, email verification.
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,8 @@ from jose import JWTError, jwt
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger("vestra")
 
 from app.core.database import get_db
 from app.core.config import settings

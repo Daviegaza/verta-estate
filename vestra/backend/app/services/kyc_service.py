@@ -151,3 +151,55 @@ async def count_pending_kyc(db: AsyncSession) -> int:
         )
     )
     return result.scalar_one()
+
+
+async def batch_review_kyc(
+    db: AsyncSession,
+    kyc_ids: list[int],
+    reviewer_id: int,
+    status: KYCStatus,
+    rejection_reason: Optional[str] = None,
+) -> dict:
+    """
+    Batch review multiple KYC submissions at once.
+    Returns counts of approved, rejected, and failed reviews.
+    """
+    approved = 0
+    rejected = 0
+    failed = 0
+    errors = []
+
+    for kyc_id in kyc_ids:
+        try:
+            result = await admin_review_kyc(
+                db=db,
+                kyc_id=kyc_id,
+                reviewer_id=reviewer_id,
+                status=status,
+                rejection_reason=rejection_reason,
+            )
+            if result:
+                if status == KYCStatus.approved:
+                    approved += 1
+                else:
+                    rejected += 1
+            else:
+                failed += 1
+                errors.append({"kyc_id": kyc_id, "error": "Not found"})
+        except Exception as e:
+            failed += 1
+            errors.append({"kyc_id": kyc_id, "error": str(e)})
+
+    logger.info(
+        '{"event":"kyc_batch_reviewed","reviewer_id":%d,"status":"%s",'
+        '"approved":%d,"rejected":%d,"failed":%d}',
+        reviewer_id, status.value, approved, rejected, failed,
+    )
+
+    return {
+        "total": len(kyc_ids),
+        "approved": approved,
+        "rejected": rejected,
+        "failed": failed,
+        "errors": errors,
+    }

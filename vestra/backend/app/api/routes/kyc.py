@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user, get_current_admin
 from app.services.kyc_service import (
     submit_kyc, get_kyc_status, admin_review_kyc,
-    get_pending_kyc, count_pending_kyc,
+    get_pending_kyc, count_pending_kyc, batch_review_kyc,
 )
 from app.models.kyc_notification import KYCStatus
 
@@ -134,4 +134,32 @@ async def admin_review_kyc_endpoint(
         "kyc_id": kyc.id,
         "status": kyc.status.value,
         "message": f"KYC {status.value}",
+    }
+
+
+@router.post("/admin/batch-review")
+async def admin_batch_review_kyc_endpoint(
+    kyc_ids: list[int],
+    status: KYCStatus,
+    rejection_reason: str = None,
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin: batch approve or reject multiple KYC submissions at once."""
+    if not kyc_ids:
+        raise HTTPException(status_code=400, detail="No KYC IDs provided")
+    if len(kyc_ids) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 KYCs per batch request")
+
+    result = await batch_review_kyc(
+        db=db,
+        kyc_ids=kyc_ids,
+        reviewer_id=admin.id,
+        status=status,
+        rejection_reason=rejection_reason,
+    )
+    return {
+        "message": f"Batch review complete: {result['approved']} approved, "
+                   f"{result['rejected']} rejected, {result['failed']} failed",
+        **result,
     }

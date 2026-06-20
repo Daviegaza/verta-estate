@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.core.redis import get_redis
+from app.core.security import get_current_admin
 from app.models.user import User
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
@@ -126,11 +127,13 @@ def _get_resource_metrics() -> ResourceMetrics:
 
 
 @router.get("/health/full", response_model=FullHealthResponse)
-async def full_health_check():
+async def full_health_check(
+    admin=Depends(get_current_admin),
+):
     """
     Comprehensive system health check.
     Returns status of all services, resource metrics, and business KPIs.
-    Used by the monitoring dashboard.
+    Used by the monitoring dashboard. Admin only.
     """
     # Check services
     db_ok, db_lat, db_msg = await _check_db()
@@ -243,8 +246,10 @@ async def full_health_check():
 
 
 @router.get("/health/services")
-async def services_status():
-    """Lightweight check: returns status of all dependencies."""
+async def services_status(
+    admin=Depends(get_current_admin),
+):
+    """Lightweight check: returns status of all dependencies. Admin only."""
     db_ok, db_lat, _ = await _check_db()
     redis_ok, redis_lat, _ = await _check_redis()
 
@@ -257,14 +262,18 @@ async def services_status():
 
 
 @router.get("/health/resources")
-async def resource_metrics():
-    """Host-level resource utilization."""
+async def resource_metrics(
+    admin=Depends(get_current_admin),
+):
+    """Host-level resource utilization. Admin only."""
     return _get_resource_metrics().model_dump()
 
 
 @router.get("/health/database")
-async def database_metrics():
-    """Database-specific metrics including connection pool and table sizes."""
+async def database_metrics(
+    admin=Depends(get_current_admin),
+):
+    """Database-specific metrics including connection pool and table sizes. Admin only."""
     try:
         async with AsyncSessionLocal() as db:
             # Connection count
@@ -303,8 +312,10 @@ async def database_metrics():
 
 
 @router.get("/health/redis")
-async def redis_metrics():
-    """Redis-specific metrics including memory, keys, and hit rate."""
+async def redis_metrics(
+    admin=Depends(get_current_admin),
+):
+    """Redis-specific metrics including memory, keys, and hit rate. Admin only."""
     try:
         r = await get_redis()
         info = await r.info()

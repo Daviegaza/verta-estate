@@ -8,6 +8,7 @@ import AuthGuard from '@/components/layout/AuthGuard';
 import { Card, Spinner, Badge } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
+import { formatCurrency } from '@/lib/utils';
 import type { Payment } from '@/types';
 import {
   CreditCard, CheckCircle, AlertCircle, Clock, ArrowLeft,
@@ -69,10 +70,6 @@ const STATUS_BADGE: Record<string, 'success' | 'info' | 'warning' | 'default' | 
   cancelled: 'default',
   expired: 'danger',
 };
-
-function formatKES(amount: number): string {
-  return `KES ${amount.toLocaleString('en-KE')}`;
-}
 
 function formatDate(dateString: string): string {
   return new Date(dateString).toLocaleDateString('en-KE', {
@@ -264,7 +261,7 @@ function ManageSubscriptionContent() {
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 capitalize">{tier} Plan</h3>
                   <p className="text-2xl font-bold text-gray-900 mt-1">
-                    {formatKES(subscription.price)}
+                    {formatCurrency(subscription.price)}
                     <span className="text-sm font-normal text-gray-400">/month</span>
                   </p>
                 </div>
@@ -364,7 +361,7 @@ function ManageSubscriptionContent() {
                       </div>
                       <div className="text-right flex-shrink-0 ml-3">
                         <p className="text-sm font-bold text-gray-900">
-                          {formatKES(payment.amount)}
+                          {formatCurrency(payment.amount)}
                         </p>
                         <Badge variant={
                           payment.status === 'completed' ? 'success' :
@@ -429,7 +426,7 @@ function ManageSubscriptionContent() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Price</span>
-                  <span className="font-semibold text-gray-900">{formatKES(subscription.price)}/mo</span>
+                  <span className="font-semibold text-gray-900">{formatCurrency(subscription.price)}/mo</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Auto-renew</span>

@@ -87,6 +87,24 @@ PERFORMANCE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs (created_at DESC)",
     # Full-text search index (GIN) — might already exist
     "CREATE INDEX IF NOT EXISTS idx_properties_fts ON properties USING gin(to_tsvector('english', coalesce(title,'') || ' ' || coalesce(description,'') || ' ' || coalesce(address,'') || ' ' || coalesce(city,'') || ' ' || coalesce(county,'')))",
+    # Payments — user payments sorted by date (high-traffic: /payments/my)
+    "CREATE INDEX IF NOT EXISTS idx_payments_user_created ON payments (user_id, created_at DESC)",
+    # Notifications — unread fetch (high-traffic: polling for new notifications)
+    "CREATE INDEX IF NOT EXISTS idx_notifications_user_read_created ON notifications (user_id, is_read, created_at DESC)",
+    # Messages — conversation list (high-traffic: /messages)
+    "CREATE INDEX IF NOT EXISTS idx_messages_sender_receiver_created ON messages (sender_id, receiver_id, created_at DESC)",
+    # KYC — admin review queue (frequent admin page load)
+    "CREATE INDEX IF NOT EXISTS idx_kyc_verifications_status_created ON kyc_verifications (status, created_at)",
+    # Verifications — admin verification queue
+    "CREATE INDEX IF NOT EXISTS idx_verifications_status_created ON verifications (status, created_at)",
+    # Properties — featured active listings (landing page / market top)
+    "CREATE INDEX IF NOT EXISTS idx_properties_active_featured ON properties (status, is_featured DESC, created_at DESC) WHERE status = 'active'",
+    # Enterprise — API key lookup (frequent middleware check)
+    "CREATE INDEX IF NOT EXISTS idx_api_keys_key ON api_keys (key_hash)",
+    # Disputes — user's disputes sorted
+    "CREATE INDEX IF NOT EXISTS idx_disputes_filer_created ON disputes (filed_by_id, created_at DESC)",
+    # Analytics — user events by type and time (dashboard charts)
+    "CREATE INDEX IF NOT EXISTS idx_user_events_user_type_time ON user_events (user_id, event_type, created_at DESC)",
 ]
 
 

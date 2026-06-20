@@ -63,6 +63,7 @@ class Notification(Base):
     title = Column(String(255), nullable=False)
     body = Column(Text, nullable=True)
     data = Column(JSON, default=dict)  # Link data: {"property_id": 1, "payment_id": 2, etc.}
+    action_url = Column(String(1000), nullable=True)  # Deep-link for notification click
     is_read = Column(Boolean, default=False, index=True)
     channel = Column(String(20), default="in_app")  # in_app, email, whatsapp, sms
     created_at = Column(DateTime(timezone=True), server_default=func.now())

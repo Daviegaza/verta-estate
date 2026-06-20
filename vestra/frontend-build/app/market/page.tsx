@@ -15,7 +15,7 @@ import {
   Home, Building2, Trees, ChevronLeft, ChevronRight,
   LayoutGrid, List, BedDouble, Bath, Maximize, Eye, ShieldCheck, Clock
 } from 'lucide-react';
-import { KENYA_CITIES } from '@/lib/utils';
+import { KENYA_CITIES, formatCurrency } from '@/lib/utils';
 
 const PROPERTY_TYPES = [
   { value: '', label: 'All Types' },
@@ -445,7 +445,7 @@ function MarketContent() {
                       {/* Price & Trust */}
                       <div className="text-right flex-shrink-0">
                         <p className="text-lg font-bold text-gray-900 leading-none">
-                          {prop.currency === 'KES' ? `KES ${prop.price.toLocaleString('en-KE')}` : `$${prop.price.toLocaleString()}`}
+                          {formatCurrency(prop.price, prop.currency)}
                         </p>
                         {prop.listing_type === 'rent' && <span className="text-xs text-gray-400">/mo</span>}
                         {prop.trust_score && (

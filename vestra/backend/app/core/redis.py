@@ -292,4 +292,8 @@ async def check_and_mark_processed(key: str, ttl: int = 86400) -> bool:
         result = await r.set(f"vestra:processed:{key}", "1", nx=True, ex=ttl)
         return result is True or result == "OK"
     except Exception:
-        return True  # Fail open on Redis errors
+        # Fail closed — never allow replay when Redis is in an error state.
+        # A transient Redis error could otherwise let duplicate M-Pesa/Stripe
+        # callbacks through, causing double-processing of payments.
+        logger.error('{"event":"replay_check_failed","key":"%s"}', key)
+        return False

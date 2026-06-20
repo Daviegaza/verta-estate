@@ -98,8 +98,24 @@ async def get_verification_status(
 @router.get("/property/{property_id}", response_model=list[VerificationResponse])
 async def get_property_verifications(
     property_id: int,
+    current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Get all verification records for a property. Requires authentication."""
+    # Only the property owner, an agent for the property, or an admin can view verifications
+    from app.services.property_service import get_property_by_id
+    prop = await get_property_by_id(db, property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    if (
+        prop.owner_id != current_user.id
+        and current_user.role not in ("admin", "super_admin")
+        and not (
+            hasattr(prop, "agent_id")
+            and prop.agent_id == current_user.id
+        )
+    ):
+        raise HTTPException(status_code=403, detail="Not authorized to view verifications for this property")
     return await get_verifications_for_property(db, property_id)
 
 

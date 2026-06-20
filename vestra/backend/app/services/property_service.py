@@ -35,27 +35,35 @@ async def count_user_listings_this_month(db: AsyncSession, user_id: int) -> int:
 async def create_property(db: AsyncSession, owner_id: int, data: PropertyCreate) -> Property:
     """
     Create a new property listing.
-    Enforces subscription limits before creation.
+    Enforces subscription limits and active-status before creation.
     """
-    # Subscription listing limit check
-    from app.services.subscription_service import get_listing_limit, get_user_subscription
+    # Get user role and enforce subscription
+    from app.models.user import User
+    from app.services.subscription_service import (
+        get_listing_limit, get_user_subscription, enforce_subscription,
+        ROLE_REQUIRES_SUBSCRIPTION,
+    )
 
+    user_result = await db.execute(select(User).where(User.id == owner_id))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise ValueError("User not found")
+    role = user.role.value
+
+    # Enforce active subscription (raises HTTP 402 if expired/cancelled)
+    if ROLE_REQUIRES_SUBSCRIPTION.get(user.role, False):
+        await enforce_subscription(db, owner_id, user.role)
+
+    # Subscription listing limit check
     sub = await get_user_subscription(db, owner_id)
-    role = "seller"  # default
-    if sub:
-        # If user has a subscription, get their role from user table
-        from app.models.user import User
-        user_result = await db.execute(select(User).where(User.id == owner_id))
-        user = user_result.scalar_one_or_none()
-        if user:
-            role = user.role.value
+    tier = sub.get("tier", "free") if sub else "free"
 
     limit = await get_listing_limit(db, owner_id, role)
     current_count = await count_user_listings_this_month(db, owner_id)
 
     if current_count >= limit:
         raise ValueError(
-            f"Listing limit reached ({limit} per month for your plan). "
+            f"Listing limit reached ({limit} per month for your {tier} plan). "
             f"Upgrade your subscription to list more properties."
         )
 

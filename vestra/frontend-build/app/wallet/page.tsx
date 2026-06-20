@@ -35,10 +35,6 @@ const STATUS_ICONS: Record<PaymentStatus, React.ReactNode> = {
   refunded: <ArrowDown className="w-3.5 h-3.5" />,
 };
 
-function formatKES(amount: number): string {
-  return `KES ${amount.toLocaleString('en-KE')}`;
-}
-
 function formatPaymentDate(dateString: string): string {
   return new Date(dateString).toLocaleDateString('en-KE', {
     day: 'numeric',
@@ -201,7 +197,7 @@ function WalletContent() {
                   <div>
                     <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Total Spent</p>
                     <p className="text-2xl font-bold text-gray-900 mt-1.5">
-                      {formatKES(summary.totalSpent)}
+                      {formatCurrency(summary.totalSpent)}
                     </p>
                     {summary.lastTransaction && (
                       <p className="text-xs text-gray-400 mt-1">
@@ -220,7 +216,7 @@ function WalletContent() {
                   <div>
                     <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Pending</p>
                     <p className="text-2xl font-bold text-amber-600 mt-1.5">
-                      {formatKES(summary.pendingAmount)}
+                      {formatCurrency(summary.pendingAmount)}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
                       {payments.filter((p) => p.status === 'pending' || p.status === 'processing').length} transactions
@@ -300,7 +296,7 @@ function WalletContent() {
                               {formatPaymentDate(payment.created_at)}
                             </td>
                             <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 whitespace-nowrap">
-                              {formatKES(payment.amount)}
+                              {formatCurrency(payment.amount)}
                             </td>
                             <td className="px-5 py-3.5 whitespace-nowrap">
                               <Badge variant={methodBadge.variant}>{methodBadge.label}</Badge>

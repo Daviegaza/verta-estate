@@ -410,7 +410,7 @@ async def send_notification(
     send_whatsapp: bool = False,
 ):
     """Send an in-app notification. Optionally also send via WhatsApp."""
-    from app.models.notification import Notification
+    from app.models.kyc_notification import Notification
 
     notif = Notification(
         user_id=user_id,

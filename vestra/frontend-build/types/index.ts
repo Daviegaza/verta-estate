@@ -204,6 +204,9 @@ export interface AISearchResult {
   page: number;
   pages: number;
   size: number;
+  market_context?: string;
+  ai_recommendations?: string[];
+  search_tips?: string[];
 }
 
 // Escrow types

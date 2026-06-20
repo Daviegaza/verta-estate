@@ -96,34 +96,10 @@ async def ai_property_search(
     q: str = Query(..., description="Natural language search query"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Parse natural language into property search filters using AI."""
-    parsed = await generate_ai_property_search(q)
-    search = PropertySearch(
-        query=parsed.get("keywords"),
-        city=parsed.get("city"),
-        county=parsed.get("county"),
-        property_type=parsed.get("property_type"),
-        listing_type=parsed.get("listing_type"),
-        min_price=parsed.get("min_price"),
-        max_price=parsed.get("max_price"),
-        bedrooms=parsed.get("bedrooms"),
-    )
-    results = await search_properties(db, search)
-    # Handle cached (dict) or fresh (ORM) items
-    raw_items = results["items"]
-    if raw_items and isinstance(raw_items[0], dict):
-        items_data = raw_items
-    else:
-        items_data = [_prop_to_dict(item) for item in raw_items]
-    return {
-        "interpretation": parsed.get("interpretation"),
-        "filters_applied": parsed,
-        "items": items_data,
-        "total": results["total"],
-        "page": results["page"],
-        "pages": results["pages"],
-        "size": results["size"],
-    }
+    """AI-powered property search — works for everyone (auth optional for personalized results)."""
+    from app.services.smart_ai_service import smart_search
+    result = await smart_search(db, q, current_user_id=None)
+    return result
 
 
 @router.get("/my")

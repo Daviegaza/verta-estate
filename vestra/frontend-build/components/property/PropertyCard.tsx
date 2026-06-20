@@ -235,6 +235,21 @@ function PropertyCard({ property, className }: PropertyCardProps) {
             )}
           </div>
 
+          {/* AI Insight tags (from smart AI search) */}
+          {(property as any).ai_trust_insight && (
+            <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-50 text-xs">
+              <span className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-lg">
+                <Sparkles className="w-3 h-3" />
+                {(property as any).ai_trust_insight}
+              </span>
+              {(property as any).ai_price_tip && (
+                <span className="px-2 py-1 bg-green-50 text-green-700 rounded-lg">
+                  {(property as any).ai_price_tip}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Footer meta */}
           <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-50 text-xs text-gray-400">
             <span className="flex items-center gap-1">

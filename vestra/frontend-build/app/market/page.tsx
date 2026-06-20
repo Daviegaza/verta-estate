@@ -53,6 +53,7 @@ function MarketContent() {
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const [aiInterpretation, setAiInterpretation] = useState('');
+  const [aiContext, setAiContext] = useState<{ market_context?: string; ai_recommendations?: string[]; search_tips?: string[] }>({});
 
   const [query, setQuery] = useState(initialQuery);
   const [inputValue, setInputValue] = useState(initialQuery);
@@ -97,7 +98,13 @@ function MarketContent() {
         setTotal(result.total || 0);
         setPages(result.pages || 1);
         setAiInterpretation(result.interpretation || '');
+        setAiContext({
+          market_context: result.market_context || '',
+          ai_recommendations: result.ai_recommendations || [],
+          search_tips: result.search_tips || [],
+        });
       } else {
+        setAiContext({});
         const result: PropertyListResponse = await api.listProperties({
           query: query || undefined,
           city: filters.city || undefined,
@@ -283,14 +290,31 @@ function MarketContent() {
 
       {/* Results */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {/* AI interpretation */}
+        {/* AI interpretation — enhanced */}
         {aiInterpretation && (
-          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-3">
-            <Sparkles className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-blue-800">AI Search</p>
-              <p className="text-sm text-blue-700">{aiInterpretation}</p>
+          <div className="mb-6 space-y-3">
+            <div className="p-4 bg-gradient-to-r from-blue-50 to-emerald-50 border border-blue-200 rounded-xl flex items-start gap-3">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Sparkles className="w-4 h-4 text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-blue-900 mb-1">Vestra AI understood your search</p>
+                <p className="text-sm text-blue-700 leading-relaxed">{aiInterpretation}</p>
+                {aiContext.market_context && (
+                  <p className="text-xs text-blue-600 mt-2 italic">{aiContext.market_context}</p>
+                )}
+              </div>
             </div>
+            {/* AI recommendations */}
+            {aiContext.ai_recommendations && aiContext.ai_recommendations.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {aiContext.ai_recommendations.map((tip: string, i: number) => (
+                  <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                    <Sparkles className="w-3 h-3" /> {tip}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

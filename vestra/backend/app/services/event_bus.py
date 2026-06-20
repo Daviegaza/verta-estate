@@ -1,7 +1,9 @@
 """
 Event Bus — central event emitter for the VESTRA platform.
 Fires notifications and webhooks after key business events.
-Fire-and-forget via asyncio.create_task — non-blocking, non-critical.
+
+Durable: uses Redis Streams for reliable delivery with retry and dead-letter.
+Falls back to asyncio.create_task when Redis is unavailable (graceful degradation).
 """
 from __future__ import annotations
 
@@ -92,9 +94,9 @@ async def emit_event(
     """
     Central event emitter. Called after key business events.
 
-    Creates an in-app notification and triggers webhook deliveries.
-    Both are fire-and-forget via asyncio.create_task — they never block
-    the caller or raise exceptions that propagate to the request handler.
+    Enqueues a notification task + webhook delivery onto the Redis Stream
+    for durable, retryable processing. Falls back to asyncio.create_task
+    when Redis is unavailable.
 
     Args:
         db: Database session (from the caller's request context).
@@ -102,20 +104,37 @@ async def emit_event(
         user_id: The user to notify.
         data: Event payload dict used for notification formatting and webhook body.
     """
-    # Fire notification creation in background
-    asyncio.create_task(
-        _create_notification_background(event_type, user_id, data)
+    from app.core.task_queue import enqueue
+
+    title, body = _format_notification(event_type, data)
+
+    # ── Enqueue notification (durable, via Redis Streams) ─────────────────
+    notification_enqueued = await enqueue(
+        "notification",
+        {"user_id": user_id, "type": event_type, "title": title, "body": body, "data": data},
     )
 
-    # Fire webhook delivery in background
-    asyncio.create_task(
-        _trigger_webhooks_background(event_type, data)
+    # ── Enqueue webhook delivery (durable) ────────────────────────────────
+    webhook_enqueued = await enqueue(
+        "webhook",
+        {"event": event_type, "data": data},
     )
 
-    # Log immediately
+    # ── Fallback to fire-and-forget if Redis is down ──────────────────────
+    if not notification_enqueued:
+        asyncio.create_task(
+            _create_notification_background(event_type, user_id, data)
+        )
+    if not webhook_enqueued:
+        asyncio.create_task(
+            _trigger_webhooks_background(event_type, data)
+        )
+
     logger.info(
-        '{"event":"bus_event","type":"%s","user_id":%d}',
-        event_type, user_id,
+        '{"event":"bus_event","type":"%s","user_id":%d,"durable":%s}',
+        event_type,
+        user_id,
+        "redis_stream" if (notification_enqueued or webhook_enqueued) else "fire_and_forget",
     )
 
 

@@ -1,0 +1,89 @@
+# VESTRA Backend — Python Tooling Configuration
+# Ruff, mypy, Bandit, pytest are configured here
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+exclude = [
+    ".git",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "alembic/versions",
+    "venv",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "RUF",    # Ruff-specific rules
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line-too-long (handled by formatter)
+    "B008",   # do-not-perform-function-calls-in-argument-defaults
+    "RUF001", # ambiguous-unicode-character-string
+    "SIM108", # use-ternary-operator (personal preference)
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+no_strict_optional = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "-p no:warnings",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", "alembic"]
+skips = ["B101", "B601"]  # assert statements, shell injection (false positives in web app)
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["tests/*", "alembic/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

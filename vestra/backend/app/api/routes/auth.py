@@ -216,13 +216,13 @@ async def change_password(
     db: AsyncSession = Depends(get_db),
 ):
     """Change password for authenticated user."""
-    if not verify_password(data.current_password, current_user.hashed_password):
+    if not await verify_password(data.current_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
         )
 
-    current_user.hashed_password = get_password_hash(data.new_password)
+    current_user.hashed_password = await get_password_hash(data.new_password)
     await db.commit()
 
     # Invalidate all existing sessions
@@ -270,7 +270,7 @@ async def reset_password(data: ResetPasswordRequest, db: AsyncSession = Depends(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.hashed_password = get_password_hash(data.new_password)
+    user.hashed_password = await get_password_hash(data.new_password)
     await db.commit()
 
     # Invalidate the token and all existing sessions

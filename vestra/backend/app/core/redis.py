@@ -129,23 +129,92 @@ def cached(prefix: str, ttl: int = 300):
     return decorator
 
 
-# ── Rate Limiter (Redis sliding-window) ────────────────────────────────────────
+# ── Rate Limiter (Redis sliding-window + in-memory fallback) ────────────────────
 
-class RedisRateLimiter:
+import time as _time
+from collections import defaultdict
+import threading
+
+
+class InMemoryRateLimiter:
     """
-    Redis-based sliding-window rate limiter.
-    Replaces the in-memory defaultdict used in middleware.
+    Lock-free-ish in-memory sliding-window rate limiter.
+    Used as a fallback when Redis is unavailable so rate limiting
+    doesn't silently disappear.
+
+    Not distributed — each worker maintains its own counters, so the
+    effective limit is (N_workers × max_requests) during a Redis outage.
+    That's acceptable: degraded protection is vastly better than none.
     """
 
     def __init__(self, max_requests: int = 60, window_seconds: int = 60):
         self.max_requests = max_requests
         self.window = window_seconds
+        self._buckets: dict[str, list[float]] = defaultdict(list)
+        self._lock = threading.Lock()
+
+    def is_allowed(self, key: str) -> bool:
+        """Return True if the request is within limits (sync, thread-safe)."""
+        now = _time.monotonic()
+        window_start = now - self.window
+
+        with self._lock:
+            bucket = self._buckets[key]
+            # Prune expired entries
+            while bucket and bucket[0] < window_start:
+                bucket.pop(0)
+            if len(bucket) < self.max_requests:
+                bucket.append(now)
+                return True
+            return False
+
+    def get_remaining(self, key: str) -> int:
+        """Return remaining requests in the current window."""
+        now = _time.monotonic()
+        window_start = now - self.window
+
+        with self._lock:
+            bucket = self._buckets[key]
+            while bucket and bucket[0] < window_start:
+                bucket.pop(0)
+            return max(0, self.max_requests - len(bucket))
+
+    def cleanup(self) -> None:
+        """Remove stale buckets older than 2× window to prevent memory leaks."""
+        cutoff = _time.monotonic() - (2 * self.window)
+        with self._lock:
+            stale = [k for k, v in self._buckets.items() if not v or v[-1] < cutoff]
+            for k in stale:
+                del self._buckets[k]
+
+
+class RedisRateLimiter:
+    """
+    Redis-based sliding-window rate limiter with in-memory fallback.
+
+    When Redis is unavailable, falls back to InMemoryRateLimiter so rate
+    limits are enforced instead of silently disappearing (fail-closed).
+
+    Pass fail_open=True only for non-security-critical endpoints where
+    availability matters more than rate limiting.
+    """
+
+    def __init__(
+        self,
+        max_requests: int = 60,
+        window_seconds: int = 60,
+        fail_open: bool = False,
+    ):
+        self.max_requests = max_requests
+        self.window = window_seconds
+        self.fail_open = fail_open
+        self._fallback = InMemoryRateLimiter(max_requests, window_seconds)
 
     async def is_allowed(self, key: str) -> bool:
         """Return True if the request is within limits, False if rate-limited."""
         r = await get_redis()
         if r is None:
-            return True  # Redis down — fail open
+            return True if self.fail_open else self._fallback.is_allowed(key)
         try:
             now = asyncio.get_event_loop().time()
             window_start = now - self.window
@@ -160,13 +229,13 @@ class RedisRateLimiter:
 
             return count <= self.max_requests
         except Exception:
-            return True  # Fail open
+            return True if self.fail_open else self._fallback.is_allowed(key)
 
     async def get_remaining(self, key: str) -> int:
         """Return remaining requests in the current window."""
         r = await get_redis()
         if r is None:
-            return self.max_requests
+            return self.max_requests if self.fail_open else self._fallback.get_remaining(key)
         try:
             now = asyncio.get_event_loop().time()
             window_start = now - self.window
@@ -175,7 +244,7 @@ class RedisRateLimiter:
             count = await r.zcard(redis_key)
             return max(0, self.max_requests - count)
         except Exception:
-            return self.max_requests
+            return self.max_requests if self.fail_open else self._fallback.get_remaining(key)
 
 
 # ── Session Store ──────────────────────────────────────────────────────────────

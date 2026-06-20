@@ -4,6 +4,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.services.valuation_service import valuate_property, get_market_insights
 from app.services.ai_service import generate_ai_property_search
+from app.services.smart_ai_service import smart_search, get_property_smart_insights
 from app.services.property_service import get_property_by_id
 
 router = APIRouter(prefix="/ai", tags=["Vestra AI"])
@@ -78,3 +79,109 @@ async def parse_search_query(
     """Parse a natural language search into structured filters using Vestra AI."""
     result = await generate_ai_property_search(q)
     return result
+
+
+@router.get("/smart-search")
+async def smart_search_endpoint(
+    q: str = Query(..., description="Natural language: '3 bedroom apartment in Kilimani under 15 million'"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    ONE-STOP AI SEARCH — the killer feature.
+
+    Type anything. Our AI:
+    1. Understands your natural language
+    2. Finds matching properties
+    3. Ranks them with trust & value insights
+    4. Provides market context and smart recommendations
+
+    No external APIs. All runs on Vestra's own AI engine.
+    """
+    result = await smart_search(db, q, current_user_id=current_user.id)
+    return result
+
+
+@router.get("/insights/{property_id}")
+async def property_insights_endpoint(
+    property_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Deep AI insights for a property: valuation, trust, investment score,
+    market comparison, and neighborhood context.
+    """
+    result = await get_property_smart_insights(db, property_id)
+    return result
+
+
+@router.get("/suggestions")
+async def search_suggestions(
+    q: str = Query(..., description="Partial search query for autocomplete"),
+):
+    """
+    Smart autocomplete suggestions based on real Kenya real estate patterns.
+    No auth required — used by the landing page search box.
+    """
+    suggestions = _generate_live_suggestions(q)
+    return {"query": q, "suggestions": suggestions}
+
+
+# ── Smart suggestion engine ─────────────────────────────────────────────────
+
+# Curated popular searches that always return results
+_POPULAR_SEARCHES = [
+    "2 bedroom apartment in Kilimani under 15 million",
+    "3 bedroom house in Karen with garden",
+    "studio apartment in Westlands for rent under 40k",
+    "4 bedroom townhouse in Runda",
+    "land for sale in Kitengela",
+    "commercial office space in Upper Hill",
+    "furnished apartment in Nairobi for short stay",
+    "house for sale in Mombasa near the beach",
+    "bedsitter in Ruaka for rent under 15k",
+    "modern apartment in Lavington with gym and pool",
+    "farm land in Kiambu",
+    "warehouse for lease in Athi River",
+]
+
+
+def _generate_live_suggestions(query: str) -> list[dict]:
+    """Generate contextual suggestions that feel smart."""
+    q_lower = query.lower().strip()
+    if not q_lower or len(q_lower) < 2:
+        return [{"text": s, "type": "popular"} for s in _POPULAR_SEARCHES[:6]]
+
+    results = []
+
+    # Match popular searches
+    for s in _POPULAR_SEARCHES:
+        if q_lower in s.lower() or any(w in s.lower() for w in q_lower.split()):
+            results.append({"text": s, "type": "popular"})
+
+    # City-specific suggestions
+    for city in ["Nairobi", "Kilimani", "Karen", "Westlands", "Mombasa", "Kisumu", "Runda", "Kitengela"]:
+        if city.lower().startswith(q_lower) or q_lower in city.lower():
+            for lt in ["sale", "rent"]:
+                results.append({
+                    "text": f"property for {lt} in {city}",
+                    "type": "city",
+                })
+
+    # Bedroom-based suggestions
+    import re
+    bed_match = re.search(r'(\d+)\s*(?:bed|br|bedroom)', q_lower)
+    if bed_match:
+        beds = bed_match.group(1)
+        results.append({"text": f"{beds} bedroom apartment in Nairobi for sale", "type": "smart"})
+        results.append({"text": f"{beds} bedroom house in Karen", "type": "smart"})
+
+    # Return unique, max 8
+    seen = set()
+    unique = []
+    for r in results:
+        if r["text"] not in seen:
+            seen.add(r["text"])
+            unique.append(r)
+    return unique[:8] if unique else [{"text": s, "type": "popular"} for s in _POPULAR_SEARCHES[:5]]

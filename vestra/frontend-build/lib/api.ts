@@ -194,6 +194,22 @@ class VestraAPIClient {
     });
   }
 
+  async aiSuggestions(query: string): Promise<{ query: string; suggestions: Array<{ text: string; type: string }> }> {
+    return withRetry(async () => {
+      const res = await this.client.get('/api/ai/suggestions', {
+        params: { q: query },
+      });
+      return res.data;
+    });
+  }
+
+  async aiPropertyInsights(propertyId: number): Promise<any> {
+    return withRetry(async () => {
+      const res = await this.client.get(`/api/ai/insights/${propertyId}`);
+      return res.data;
+    });
+  }
+
   async getProperty(id: number): Promise<Property> {
     return withRetry(async () => {
       const res = await this.client.get<Property>(`/api/properties/${id}`);

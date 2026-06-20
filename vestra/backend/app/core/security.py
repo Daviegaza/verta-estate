@@ -9,13 +9,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
-import bcrypt
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.hashing import verify_password, get_password_hash  # async, non-blocking
 
 # ── Password Hashing ──────────────────────────────────────────────────────────
 
@@ -24,25 +24,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 # Password strength requirements
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its bcrypt hash."""
-    try:
-        return bcrypt.checkpw(
-            plain_password.encode('utf-8'),
-            hashed_password.encode('utf-8')
-        )
-    except Exception:
-        return False
-
-
-def get_password_hash(password: str) -> str:
-    """Hash a password with bcrypt."""
-    return bcrypt.hashpw(
-        password.encode('utf-8'),
-        bcrypt.gensalt()
-    ).decode('utf-8')
 
 
 def validate_password_strength(password: str) -> tuple[bool, str]:

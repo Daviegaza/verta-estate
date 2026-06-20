@@ -31,7 +31,7 @@ async def create_user(
     user_data: UserCreate,
     referral_code: Optional[str] = None,
 ) -> User:
-    hashed_password = get_password_hash(user_data.password)
+    hashed_password = await get_password_hash(user_data.password)
     user = User(
         email=user_data.email,
         phone=user_data.phone,
@@ -65,7 +65,7 @@ async def create_user(
 
 async def authenticate_user(db: AsyncSession, email: str, password: str) -> Optional[User]:
     user = await get_user_by_email(db, email)
-    if not user or not verify_password(password, user.hashed_password):
+    if not user or not await verify_password(password, user.hashed_password):
         return None
     return user
 

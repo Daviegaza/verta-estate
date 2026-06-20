@@ -12,7 +12,6 @@ const nextConfig: NextConfig = {
     turbopackFileSystemCacheForDev: !isProd,
   },
   images: {
-    unoptimized: true,  // Always fast — skip image optimization in dev AND prod
     remotePatterns: [
       { protocol: 'https', hostname: 'vestra.co.ke' },
       { protocol: 'https', hostname: '*.vestra.co.ke' },

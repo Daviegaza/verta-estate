@@ -362,6 +362,45 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ── Background Worker ─────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vestra_worker
+    restart: unless-stopped
+    command: python -m app.workers.worker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/vestra?ssl=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      WORKERS: ${BG_WORKERS:-4}
+      BATCH_SIZE: ${BG_BATCH_SIZE:-5}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@vestra.co.ke}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    networks:
+      - vestra_internal
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
   # ── Flower (Celery monitor) ─────────────────────────────────────────────────
   flower:
     image: mher/flower:2.0.1

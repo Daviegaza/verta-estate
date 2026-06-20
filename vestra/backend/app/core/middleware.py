@@ -45,14 +45,17 @@ logger.handlers = [handler]
 auth_limiter = RedisRateLimiter(
     max_requests=settings.RATE_LIMIT_AUTH_PER_MINUTE,
     window_seconds=60,
+    fail_open=False,  # Auth endpoints must never have rate limiting silently disappear
 )
 general_limiter = RedisRateLimiter(
     max_requests=settings.RATE_LIMIT_GENERAL_PER_MINUTE,
     window_seconds=60,
+    fail_open=False,  # Enforce even during Redis outage (in-memory fallback)
 )
 admin_limiter = RedisRateLimiter(
     max_requests=settings.RATE_LIMIT_ADMIN_PER_MINUTE,
     window_seconds=60,
+    fail_open=False,  # Admin endpoints are high-value targets
 )
 
 

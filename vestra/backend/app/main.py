@@ -11,6 +11,7 @@ import os
 import time
 import logging
 from contextlib import asynccontextmanager
+from decimal import Decimal
 
 import sentry_sdk
 from fastapi import FastAPI, Request, HTTPException
@@ -19,6 +20,27 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+# ── Custom JSON encoder — handles Decimal from PostgreSQL Numeric columns ──
+import json as _json
+
+
+def _json_serializer(obj):
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+class DecimalAwareJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return _json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+            default=_json_serializer,
+        ).encode("utf-8")
 
 from app.core.config import settings
 from app.core.database import create_tables, AsyncSessionLocal, engine
@@ -104,6 +126,7 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
+    default_response_class=DecimalAwareJSONResponse,
 )
 
 # ── Middleware Stack (applied in order — first added = outermost) ───────────────
@@ -152,6 +175,56 @@ async def api_deprecation_middleware(request: Request, call_next):
             '{"event":"deprecated_api_call","path":"%s","method":"%s"}',
             path, request.method,
         )
+    return response
+
+
+# ── API Key Tracking Middleware ─────────────────────────────────────────────────
+# Intercepts enterprise routes, validates X-API-Key headers, tracks usage,
+# and enforces per-key rate limits. Non-enterprise routes pass through.
+
+@app.middleware("http")
+async def api_key_tracking_middleware(request: Request, call_next):
+    """Track API key usage for enterprise endpoints from X-API-Key header."""
+    path = request.url.path
+    is_enterprise = "/enterprise/" in path
+
+    if not is_enterprise:
+        return await call_next(request)
+
+    api_key_header = request.headers.get("X-API-Key")
+    if not api_key_header:
+        return await call_next(request)
+
+    # ── Validate and track (non-blocking — the route dependency handles auth) ──
+    try:
+        from app.core.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as mid_db:
+            from app.services.api_key_service import validate_api_key, record_api_key_usage
+            from app.core.redis import get_redis
+
+            key = await validate_api_key(mid_db, api_key_header)
+            if key:
+                # Track usage asynchronously
+                await record_api_key_usage(
+                    mid_db, key.id, endpoint=path, response_status=200, response_time_ms=0.0,
+                )
+
+                # Enforce rate limit
+                from app.core.redis import RedisRateLimiter
+                limiter = RedisRateLimiter(max_requests=key.rate_limit_per_min, window_seconds=60)
+                allowed = await limiter.is_allowed(f"api_key:{key.id}")
+                if not allowed:
+                    return JSONResponse(
+                        status_code=429,
+                        content={
+                            "error": "rate_limit_exceeded",
+                            "message": f"Max {key.rate_limit_per_min} requests per minute exceeded.",
+                        },
+                    )
+    except Exception:
+        logger.warning('{"event":"api_key_middleware_error","path":"%s"}', path)
+
+    response = await call_next(request)
     return response
 
 

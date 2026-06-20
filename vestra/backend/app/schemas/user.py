@@ -46,8 +46,12 @@ class UserResponse(BaseModel):
     location: Optional[str]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
+
+    @field_validator("is_kyc_verified", mode="before")
+    @classmethod
+    def coerce_none_to_false(cls, v):
+        return False if v is None else v
 
 
 class UserUpdate(BaseModel):

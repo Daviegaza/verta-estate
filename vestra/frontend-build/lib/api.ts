@@ -238,8 +238,12 @@ class VestraAPIClient {
 
   async getMyProperties(): Promise<Property[]> {
     return withRetry(async () => {
-      const res = await this.client.get<Property[]>('/api/properties/my');
-      return res.data;
+      const res = await this.client.get<any>('/api/properties/my');
+      // Backend returns { items: [...], total: N } — unwrap if needed
+      const data = res.data;
+      if (data && Array.isArray(data.items)) return data.items;
+      if (Array.isArray(data)) return data;
+      return [];
     });
   }
 

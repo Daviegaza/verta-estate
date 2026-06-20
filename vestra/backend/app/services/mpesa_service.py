@@ -160,6 +160,99 @@ async def query_stk_status(checkout_request_id: str) -> dict:
     return response.json()
 
 
+# ── Pluggable Provider Adapter ──────────────────────────────────────────────
+
+from decimal import Decimal
+from app.services.payment_providers import (
+    PaymentProvider, PaymentRequest, PaymentResult, ProviderType,
+)
+
+
+class MpesaKEProvider(PaymentProvider):
+    """Safaricom M-Pesa Kenya provider implementing the PaymentProvider interface."""
+
+    @property
+    def provider_type(self) -> ProviderType:
+        return ProviderType.mpesa_ke
+
+    @property
+    def supports_mobile_money(self) -> bool:
+        return True
+
+    async def initiate_payment(self, request: PaymentRequest) -> PaymentResult:
+        """Initiate M-Pesa STK Push for Kenya."""
+        try:
+            response = await initiate_stk_push(
+                phone_number=request.phone_number or "",
+                amount=float(request.amount),
+                account_reference=request.reference[:12],
+                transaction_desc=request.description[:13],
+            )
+            if response.get("ResponseCode") == "0":
+                return PaymentResult(
+                    success=True,
+                    provider=self.provider_type.value,
+                    provider_transaction_id=response.get("CheckoutRequestID"),
+                    status="processing",
+                    raw_response=response,
+                )
+            else:
+                return PaymentResult(
+                    success=False,
+                    provider=self.provider_type.value,
+                    error_message=response.get("errorMessage", "STK Push failed"),
+                    raw_response=response,
+                )
+        except Exception as e:
+            return PaymentResult(
+                success=False,
+                provider=self.provider_type.value,
+                error_message=str(e),
+            )
+
+    async def verify_callback(self, raw_data: dict, headers: dict) -> bool:
+        """M-Pesa callback verification is handled at the route level (IP + HMAC)."""
+        return True
+
+    async def handle_callback(self, raw_data: dict) -> PaymentResult:
+        """Process a callback from M-Pesa."""
+        parsed = parse_mpesa_callback(raw_data)
+        checkout_id = parsed.get("checkout_request_id")
+
+        return PaymentResult(
+            success=parsed.get("success", False),
+            provider=self.provider_type.value,
+            provider_transaction_id=checkout_id,
+            provider_receipt=parsed.get("mpesa_receipt_number"),
+            status="completed" if parsed.get("success") else "failed",
+            raw_response=parsed,
+            error_message=None if parsed.get("success") else parsed.get("result_desc"),
+        )
+
+    async def check_status(self, transaction_id: str) -> PaymentResult:
+        """Query M-Pesa transaction status."""
+        try:
+            response = await query_stk_status(transaction_id)
+            return PaymentResult(
+                success=True,
+                provider=self.provider_type.value,
+                provider_transaction_id=transaction_id,
+                status="completed",
+                raw_response=response,
+            )
+        except Exception as e:
+            return PaymentResult(
+                success=False,
+                provider=self.provider_type.value,
+                error_message=str(e),
+            )
+
+
+# Register as a payment provider
+from app.services.payment_providers import register_provider, ProviderType
+register_provider(ProviderType.mpesa_ke, MpesaKEProvider)
+
+
 def parse_mpesa_callback(callback_data: dict) -> dict:
     """Parse M-Pesa STK Push callback response."""
     try:

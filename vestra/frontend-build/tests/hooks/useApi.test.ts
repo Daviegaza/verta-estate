@@ -19,16 +19,18 @@ describe("useApi", () => {
   });
 
   it("starts in idle state", () => {
-    const { result } = renderHook(() => useApi("/test"));
-    expect(result.current.isLoading).toBe(false);
+    const fetcher = () => mockGet("/test");
+    const { result } = renderHook(() => useApi(fetcher, { immediate: false }));
+    expect(result.current.loading).toBe(false);
     expect(result.current.data).toBeNull();
     expect(result.current.error).toBeNull();
   });
 
   it("fetches data on execute", async () => {
-    mockGet.mockResolvedValueOnce({ data: { items: [1, 2, 3] } });
+    mockGet.mockResolvedValueOnce({ items: [1, 2, 3] });
 
-    const { result } = renderHook(() => useApi("/test"));
+    const fetcher = () => mockGet("/test");
+    const { result } = renderHook(() => useApi(fetcher, { immediate: false }));
 
     await act(async () => {
       await result.current.execute();
@@ -40,35 +42,36 @@ describe("useApi", () => {
   });
 
   it("handles errors", async () => {
-    mockGet.mockRejectedValueOnce(new Error("Network error"));
+    const errorMessage = "Network error";
+    // Mock always rejects — with retries:0 so no retry attempts
+    mockGet.mockRejectedValue(new Error(errorMessage));
 
-    const { result } = renderHook(() => useApi("/test"));
+    const fetcher = () => mockGet("/test");
+    const { result } = renderHook(() => useApi(fetcher, { immediate: false, retries: 0 }));
 
     await act(async () => {
-      try {
-        await result.current.execute();
-      } catch {
-        // Expected
-      }
+      await result.current.execute();
     });
 
     await waitFor(() => {
-      expect(result.current.error).toBeTruthy();
+      expect(result.current.error).toBe(errorMessage);
     });
   });
 
-  it("sets isLoading during fetch", async () => {
+  it("sets loading during fetch", async () => {
     let resolvePromise: (value: unknown) => void;
-    mockGet.mockReturnValueOnce(new Promise((resolve) => { resolvePromise = resolve; }));
+    const promise = new Promise((resolve) => { resolvePromise = resolve; });
+    mockGet.mockReturnValueOnce(promise);
 
-    const { result } = renderHook(() => useApi("/test"));
+    const fetcher = () => mockGet("/test");
+    const { result } = renderHook(() => useApi(fetcher, { immediate: false }));
 
     act(() => {
       result.current.execute();
     });
 
     await waitFor(() => {
-      expect(result.current.isLoading).toBe(true);
+      expect(result.current.loading).toBe(true);
     });
 
     await act(async () => {
@@ -76,16 +79,17 @@ describe("useApi", () => {
     });
   });
 
-  it("caches data with TTL", async () => {
-    mockGet.mockResolvedValueOnce({ data: { count: 42 } });
+  it("caches data with cacheKey", async () => {
+    mockGet.mockResolvedValueOnce({ count: 42 });
 
-    const { result } = renderHook(() => useApi("/test", { cacheTTL: 30000 }));
+    const fetcher = () => mockGet("/test");
+    const { result } = renderHook(() => useApi(fetcher, { cacheKey: "test-cache", immediate: false }));
 
     await act(async () => {
       await result.current.execute();
     });
 
-    // Second immediate call should use cached data
+    // Second call should use cached data
     await act(async () => {
       await result.current.execute();
     });
@@ -94,18 +98,21 @@ describe("useApi", () => {
     expect(mockGet).toHaveBeenCalledTimes(1);
   });
 
-  it("refreshes data", async () => {
-    mockGet.mockResolvedValueOnce({ data: "first" });
-    mockGet.mockResolvedValueOnce({ data: "second" });
+  it("retries data", async () => {
+    mockGet.mockResolvedValueOnce("first");
+    mockGet.mockResolvedValueOnce("second");
 
-    const { result } = renderHook(() => useApi("/test"));
+    const fetcher = () => mockGet("/test");
+    const { result } = renderHook(() => useApi(fetcher, { immediate: false }));
 
     await act(async () => {
       await result.current.execute();
     });
 
+    expect(result.current.data).toBe("first");
+
     await act(async () => {
-      await result.current.refresh();
+      await result.current.retry();
     });
 
     await waitFor(() => {

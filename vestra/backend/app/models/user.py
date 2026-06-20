@@ -19,7 +19,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
-    phone = Column(String(20), unique=True, index=True, nullable=False) # Identity requirement for M-Pesa/Global KYC
+    phone = Column(String(20), unique=True, index=True, nullable=True)  # Optional for privacy-first users
     full_name = Column(String(255), nullable=False)
     hashed_password = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), default=UserRole.buyer, nullable=False)
@@ -30,6 +30,7 @@ class User(Base):
     bio = Column(Text, nullable=True)
     location = Column(String(255), nullable=True)
     national_id = Column(String(50), nullable=True)
+    referral_code = Column(String(20), unique=True, index=True, nullable=True)  # Unique referral code (VST-XXXXXXX)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

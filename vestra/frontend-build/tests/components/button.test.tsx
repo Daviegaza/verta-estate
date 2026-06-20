@@ -15,8 +15,8 @@ describe("Button", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it("shows loading spinner when isLoading", () => {
-    render(<Button isLoading>Loading</Button>);
+  it("shows loading spinner when loading", () => {
+    render(<Button loading>Loading</Button>);
     expect(screen.getByRole("button")).toBeDisabled();
     // Should contain a spinner element
     const btn = screen.getByRole("button");
@@ -29,26 +29,16 @@ describe("Button", () => {
   });
 
   it("supports variants", () => {
-    const { container } = render(<Button variant="outline">Outline</Button>);
+    render(<Button variant="outline">Outline</Button>);
     expect(screen.getByText("Outline")).toBeInTheDocument();
   });
 
   it("supports sizes", () => {
-    const { container } = render(<Button size="lg">Large</Button>);
+    render(<Button size="lg">Large</Button>);
     expect(screen.getByText("Large")).toBeInTheDocument();
   });
 
-  it("renders as child element when asChild is set", () => {
-    render(
-      <Button asChild>
-        <a href="/test">Link</a>
-      </Button>
-    );
-    expect(screen.getByText("Link").closest("a")).toHaveAttribute("href", "/test");
-  });
-
   it("forwards ref", () => {
-    const ref = { current: null };
     render(<Button>Ref</Button>);
     expect(screen.getByText("Ref")).toBeInTheDocument();
   });

@@ -9,6 +9,8 @@ from app.models.audit_log import AuditLog
 from app.models.rental import (
     RentalUnit, Tenant, Lease, RentPayment, MaintenanceRequest,
     LeaseStatus, RentPaymentStatus, MaintenancePriority, MaintenanceStatus,
+    PaymentArrangement, ArrangementStatus, InstallmentPayment,
+    RentCollectionConfig,
 )
 from app.models.kyc_notification import (
     KYCVerification, KYCStatus, Notification, Message,
@@ -47,6 +49,8 @@ __all__ = [
     # Rentals
     "RentalUnit", "Tenant", "Lease", "RentPayment", "MaintenanceRequest",
     "LeaseStatus", "RentPaymentStatus", "MaintenancePriority", "MaintenanceStatus",
+    "PaymentArrangement", "ArrangementStatus", "InstallmentPayment",
+    "RentCollectionConfig",
     # KYC & Notifications
     "KYCVerification", "KYCStatus", "Notification", "Message",
     "SavedProperty", "SavedSearch",

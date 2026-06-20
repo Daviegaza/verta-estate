@@ -25,6 +25,9 @@ class PaymentPurpose(str, enum.Enum):
     listing_fee = "listing_fee"
     subscription = "subscription"
     transaction_fee = "transaction_fee"
+    rent = "rent"
+    deposit = "deposit"
+    utility = "utility"
 
 
 class Payment(Base):

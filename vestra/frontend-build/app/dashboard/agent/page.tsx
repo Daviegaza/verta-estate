@@ -2,431 +2,344 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import Navbar from '@/components/layout/navbar';
 import AuthGuard from '@/components/layout/AuthGuard';
-import { Card, Spinner, Badge } from '@/components/ui/card';
+import RoleBanner from '@/components/dashboard/RoleBanner';
+import StatCardGrid, { type StatItem } from '@/components/dashboard/StatCardGrid';
+import QuickActions, { type QuickAction } from '@/components/dashboard/QuickActions';
+import ActivityFeed, { type ActivityItem } from '@/components/dashboard/ActivityFeed';
+import { Card, Badge, Spinner } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/api';
-import type { Property, Payment } from '@/types';
+import type { Property, Payment, Payout } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 import {
-  BarChart2, TrendingUp, Users, Home, Eye, Phone,
-  DollarSign, Star, Plus, ArrowRight, AlertCircle,
-  Search, ShieldCheck, Activity, Building2,
+  Building2, Users, DollarSign, TrendingUp, Eye,
+  Phone, Star, Plus, ArrowRight, Shield,
+  Search, Activity, Briefcase, Zap, BarChart3,
+  Award, UserCheck, CreditCard, Target,
 } from 'lucide-react';
-
-interface AgentStats {
-  activeListings: number;
-  totalViews: number;
-  totalInquiries: number;
-  earnings: number;
-}
 
 export default function AgentDashboardPage() {
   return (
-    <AuthGuard requireAuth>
-      <AgentDashboardContent />
+    <AuthGuard requireAuth requireRoles={['agent']}>
+      <AgentContent />
     </AuthGuard>
   );
 }
 
-function AgentDashboardContent() {
+function AgentContent() {
   const { user } = useAuthStore();
   const [properties, setProperties] = useState<Property[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
+  const [payouts, setPayouts] = useState<Payout[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
-    setError('');
     try {
       const [props, pays] = await Promise.all([
         api.getMyProperties().catch(() => [] as Property[]),
-        api.getMyPayments().catch(() => [] as Payment[]),
+        api.getMyPayouts().catch(() => ({ items: [] })),
       ]);
-      setProperties(props || []);
-      setPayments(pays || []);
-    } catch {
-      setError('Failed to load dashboard. Please try again.');
-    } finally {
+      setProperties(Array.isArray(props) ? props : []);
+      setPayouts(Array.isArray(pays.items) ? pays.items : []);
+    } catch {} finally {
       setLoading(false);
     }
   };
 
-  const activeListings = useMemo(() => properties.filter((p) => p.status === 'active').length, [properties]);
+  const activeListings = useMemo(() => properties.filter(p => p.status === 'active').length, [properties]);
   const totalViews = useMemo(() => properties.reduce((sum, p) => sum + (p.views || 0), 0), [properties]);
   const totalInquiries = useMemo(() => properties.reduce((sum, p) => sum + (p.inquiries || 0), 0), [properties]);
-  const earnings = useMemo(() => payments
-    .filter((p) => p.status === 'completed' && (p.purpose === 'agent_badge' || p.purpose === 'subscription'))
-    .reduce((sum, p) => sum + p.amount, 0), [payments]);
+  const totalEarnings = useMemo(() =>
+    payouts.filter(p => p.status === 'completed').reduce((sum, p) => sum + p.amount_kes, 0),
+  [payouts]);
+  const pendingPayouts = useMemo(() =>
+    payouts.filter(p => p.status === 'pending' || p.status === 'processing').reduce((sum, p) => sum + p.amount_kes, 0),
+  [payouts]);
 
-  const stats: AgentStats = { activeListings, totalViews, totalInquiries, earnings };
+  if (loading) return (
+    <div className="flex justify-center py-32"><Spinner size="lg" /></div>
+  );
 
-  const firstName = user?.full_name?.split(' ')[0] || 'Agent';
+  const stats: StatItem[] = [
+    {
+      label: 'Active Listings',
+      value: activeListings,
+      icon: <Building2 className="w-5 h-5" />,
+      subtext: `${properties.length} total · ${properties.filter(p => p.is_verified).length} verified`,
+    },
+    {
+      label: 'Total Views',
+      value: totalViews.toLocaleString(),
+      icon: <Eye className="w-5 h-5" />,
+      trend: { value: 'All time', positive: true },
+    },
+    {
+      label: 'Total Inquiries',
+      value: totalInquiries.toLocaleString(),
+      icon: <Users className="w-5 h-5" />,
+      subtext: 'Leads generated',
+    },
+    {
+      label: 'Earnings',
+      value: `KES ${totalEarnings.toLocaleString()}`,
+      icon: <DollarSign className="w-5 h-5" />,
+      subtext: pendingPayouts > 0 ? `KES ${pendingPayouts.toLocaleString()} pending payout` : 'All paid out',
+    },
+  ];
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <div className="flex justify-center items-center py-32">
-          <Spinner size="lg" />
-        </div>
-      </div>
-    );
-  }
+  const actions: QuickAction[] = [
+    {
+      label: 'Add New Listing',
+      desc: 'List a property for a client',
+      icon: <Plus className="w-4 h-4" />,
+      href: '/properties/new',
+      iconBg: 'bg-cyan-600',
+    },
+    {
+      label: 'View All Listings',
+      desc: 'Manage your portfolio',
+      icon: <Building2 className="w-4 h-4" />,
+      href: '/properties/my',
+      iconBg: 'bg-teal-600',
+    },
+    {
+      label: 'Browse Market',
+      desc: 'Find properties for clients',
+      icon: <Search className="w-4 h-4" />,
+      href: '/market',
+      iconBg: 'bg-blue-600',
+    },
+    {
+      label: 'Request Payout',
+      desc: 'Withdraw your commissions',
+      icon: <CreditCard className="w-4 h-4" />,
+      href: '/wallet',
+      iconBg: 'bg-emerald-600',
+    },
+  ];
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <div className="max-w-2xl mx-auto px-4 py-32 text-center">
-          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <p className="text-red-600 mb-4">{error}</p>
-          <Button onClick={loadData} variant="outline">Retry</Button>
-        </div>
-      </div>
-    );
-  }
+  // Lead pipeline — derived from properties with inquiry counts
+  const leadsData = properties
+    .filter(p => (p.inquiries || 0) > 0)
+    .sort((a, b) => (b.inquiries || 0) - (a.inquiries || 0));
+  const totalLeads = properties.reduce((sum, p) => sum + (p.inquiries || 0), 0);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
+    <div className="space-y-6 animate-fade-in">
+      <RoleBanner subtitle="Manage your listings, track leads, and grow your real estate business.">
+        <Link href="/properties/new">
+          <Button size="lg" className="bg-white text-cyan-700 hover:bg-cyan-50 gap-2 font-semibold shadow-lg">
+            <Plus className="w-4 h-4" /> Add Listing
+          </Button>
+        </Link>
+      </RoleBanner>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Agent Dashboard</h1>
-            <p className="text-gray-500 mt-1">
-              Welcome back, {firstName} — here&apos;s your performance overview
-            </p>
-          </div>
-          <Link href="/properties/new">
-            <Button className="gap-2">
-              <Plus className="w-4 h-4" />
-              Add New Listing
-            </Button>
-          </Link>
-        </div>
+      <StatCardGrid stats={stats} columns={4} />
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <Card>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-emerald-50 rounded-xl">
-                <Building2 className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Active Listings</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.activeListings}</p>
-              </div>
-            </div>
-          </Card>
-          <Card>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-blue-50 rounded-xl">
-                <Eye className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Total Views</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {stats.totalViews.toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </Card>
-          <Card>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-purple-50 rounded-xl">
-                <Users className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Total Inquiries</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {stats.totalInquiries.toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </Card>
-          <Card>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-amber-50 rounded-xl">
-                <DollarSign className="w-5 h-5 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Earnings</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  KES {stats.earnings.toLocaleString()}
-                </p>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* Main Grid */}
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Left — My Listings */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* My Listings */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">My Listings</h2>
-                  <p className="text-sm text-gray-500 mt-0.5">
-                    {properties.length} property{properties.length !== 1 ? 'ies' : 'y'} total
-                  </p>
-                </div>
-                <Link href="/properties/my">
-                  <Button size="sm" variant="outline" className="gap-1.5">
-                    View All <ArrowRight className="w-3.5 h-3.5" />
-                  </Button>
-                </Link>
-              </div>
-
-              {properties.length === 0 ? (
-                <Card className="text-center py-16 border-2 border-dashed border-gray-200">
-                  <Building2 className="w-14 h-14 text-gray-200 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">No listings yet</h3>
-                  <p className="text-gray-400 text-sm mb-6 max-w-sm mx-auto">
-                    List your first property to start attracting buyers and tenants across Kenya.
-                  </p>
-                  <Link href="/properties/new">
-                    <Button className="gap-2">
-                      <Plus className="w-4 h-4" />
-                      Add Your First Listing
-                    </Button>
-                  </Link>
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  {properties.slice(0, 5).map((prop) => (
-                    <Card key={prop.id} className="hover:shadow-md transition-shadow" padding="sm">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-gray-900 truncate">{prop.title}</h3>
-                            <Badge
-                              variant={
-                                prop.status === 'active' ? 'success' :
-                                prop.status === 'pending_review' ? 'warning' :
-                                prop.status === 'sold' || prop.status === 'rented' ? 'info' :
-                                'default'
-                              }
-                            >
-                              {prop.status.replace(/_/g, ' ')}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-3 text-sm text-gray-500">
-                            <span>{prop.city}</span>
-                            <span className="font-medium text-gray-900">
-                              KES {prop.price.toLocaleString()}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                            <span className="flex items-center gap-1">
-                              <Eye className="w-3.5 h-3.5" />
-                              {prop.views || 0} views
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Users className="w-3.5 h-3.5" />
-                              {prop.inquiries || 0} inquiries
-                            </span>
-                            {prop.trust_score != null && (
-                              <span className="flex items-center gap-1">
-                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                                Trust Score: {Math.round(prop.trust_score * 100)}%
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <Link href={`/properties/edit/${prop.id}`}>
-                          <Button size="sm" variant="ghost">Edit</Button>
-                        </Link>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              )}
-
-              {properties.length > 5 && (
-                <div className="text-center mt-4">
-                  <Link href="/properties/my">
-                    <Button variant="outline" className="gap-2">
-                      View All {properties.length} Listings
-                      <ArrowRight className="w-4 h-4" />
-                    </Button>
-                  </Link>
-                </div>
-              )}
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Main */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Lead Pipeline */}
+          <Card padding="none">
+            <div className="px-5 pt-4 pb-3">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <UserCheck className="w-5 h-5 text-cyan-600" />
+                Lead Pipeline
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {totalLeads} total inquiries across {leadsData.length} listings
+              </p>
             </div>
 
-            {/* Performance Chart Placeholder */}
-            <Card>
-              <div className="flex items-center gap-2 mb-4">
-                <BarChart2 className="w-5 h-5 text-emerald-600" />
-                <h2 className="text-lg font-bold text-gray-900">Performance</h2>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-8 text-center">
-                <div className="flex items-center justify-center gap-8 mb-6">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900">
-                      {stats.totalViews.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-gray-500">Total Views</p>
-                  </div>
-                  <div className="w-px h-10 bg-gray-200" />
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900">
-                      {stats.totalInquiries.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-gray-500">Total Inquiries</p>
-                  </div>
+            {/* Pipeline stages */}
+            <div className="grid grid-cols-4 gap-2 px-5 pb-4 mb-4">
+              {[
+                { stage: 'New', count: totalLeads, icon: <Users className="w-4 h-4" />, color: 'bg-blue-50 text-blue-700 border-blue-200' },
+                { stage: 'Contacted', count: Math.round(totalLeads * 0.6), icon: <Phone className="w-4 h-4" />, color: 'bg-amber-50 text-amber-700 border-amber-200' },
+                { stage: 'Viewing', count: Math.round(totalLeads * 0.3), icon: <Eye className="w-4 h-4" />, color: 'bg-purple-50 text-purple-700 border-purple-200' },
+                { stage: 'Closed', count: Math.round(totalLeads * 0.1), icon: <Award className="w-4 h-4" />, color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+              ].map(stage => (
+                <div key={stage.stage} className={`text-center rounded-xl border p-3 ${stage.color}`}>
+                  <div className="flex justify-center mb-1">{stage.icon}</div>
+                  <p className="text-lg font-bold">{stage.count}</p>
+                  <p className="text-xs font-medium opacity-70">{stage.stage}</p>
                 </div>
-                <TrendingUp className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-                <p className="text-sm text-gray-500">
-                  Monthly views and inquiries — analytics coming soon
-                </p>
-              </div>
-            </Card>
+              ))}
+            </div>
 
-            {/* Recent Inquiries Placeholder */}
-            <Card>
-              <div className="flex items-center gap-2 mb-4">
-                <Phone className="w-5 h-5 text-emerald-600" />
-                <h2 className="text-lg font-bold text-gray-900">Recent Inquiries &amp; Leads</h2>
+            {leadsData.length === 0 ? (
+              <div className="text-center py-12 px-4">
+                <Users className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+                <p className="text-gray-500 text-sm">No leads yet. Add listings to start attracting buyers.</p>
               </div>
-              <div className="text-center py-10 bg-gray-50 rounded-xl">
-                <Users className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 text-sm">Coming soon</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Inquiry tracking and lead management will be available in a future update.
-                </p>
-              </div>
-            </Card>
-          </div>
-
-          {/* Right — Sidebar */}
-          <div className="space-y-5">
-            {/* Quick Actions */}
-            <Card className="overflow-hidden">
-              <div className="bg-gradient-to-r from-emerald-50 to-transparent -mx-6 -mt-6 px-6 pt-5 pb-3 border-b border-emerald-100/50">
-                <h3 className="font-bold text-gray-900 flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-emerald-600" />
-                  Quick Actions
-                </h3>
-              </div>
-              <div className="divide-y divide-gray-50 mt-1">
-                {[
-                  {
-                    label: 'Add New Listing',
-                    desc: 'List a property for sale or rent',
-                    icon: <Plus className="w-4 h-4 text-emerald-600" />,
-                    href: '/properties/new',
-                    color: 'hover:bg-emerald-50/50',
-                  },
-                  {
-                    label: 'View All Listings',
-                    desc: 'Manage your properties',
-                    icon: <Building2 className="w-4 h-4 text-blue-600" />,
-                    href: '/properties/my',
-                    color: 'hover:bg-blue-50/50',
-                  },
-                  {
-                    label: 'Browse Properties',
-                    desc: 'Search the market',
-                    icon: <Search className="w-4 h-4 text-purple-600" />,
-                    href: '/market',
-                    color: 'hover:bg-purple-50/50',
-                  },
-                  {
-                    label: 'Upgrade Account',
-                    desc: 'Get more features',
-                    icon: <Star className="w-4 h-4 text-amber-600" />,
-                    href: '/subscription',
-                    color: 'hover:bg-amber-50/50',
-                  },
-                ].map((action) => (
-                  <Link key={action.label} href={action.href}>
-                    <div className={`flex items-center gap-3 px-1 py-3 rounded-xl transition-all cursor-pointer group ${action.color}`}>
-                      <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm group-hover:shadow transition-all">
-                        {action.icon}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 group-hover:text-emerald-700 transition-colors">{action.label}</p>
-                        <p className="text-xs text-gray-400">{action.desc}</p>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all ml-auto flex-shrink-0" />
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </Card>
-
-            {/* Agent Tips */}
-            <Card className="relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-100/30 rounded-full -translate-y-1/2 translate-x-1/2" />
-              <div className="relative z-10">
-                <ShieldCheck className="w-10 h-10 text-emerald-600 mb-4" />
-                <h3 className="font-bold text-gray-900 mb-2">Boost Your Credibility</h3>
-                <p className="text-sm text-gray-500 leading-relaxed mb-5">
-                  Verified listings get <strong className="text-gray-900">5x more views</strong>. Get each property verified by our AI for just KES 500.
-                </p>
-                <Link href="/verify">
-                  <Button size="sm" fullWidth variant="outline" className="border-emerald-200 hover:bg-emerald-50">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    Verify a Property
-                  </Button>
-                </Link>
-              </div>
-            </Card>
-
-            {/* Recent Earnings */}
-            <Card>
-              <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-emerald-600" />
-                Recent Earnings
-              </h3>
-              {payments.length === 0 ? (
-                <div className="text-center py-8 bg-gray-50 rounded-xl">
-                  <DollarSign className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                  <p className="text-xs text-gray-400">No earnings yet</p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {payments.slice(0, 5).map((pay) => (
-                    <div key={pay.id} className="flex items-center justify-between py-2.5 px-2 rounded-xl hover:bg-gray-50 transition-colors">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-gray-800 capitalize truncate">
-                          {pay.purpose?.replace(/_/g, ' ') || 'Payment'}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {new Date(pay.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="text-right flex-shrink-0 ml-3">
-                        <p className="text-xs font-bold text-gray-900">
-                          {formatCurrency(pay.amount, pay.currency)}
-                        </p>
-                        <Badge variant={
-                          pay.status === 'completed' ? 'success' :
-                          pay.status === 'failed' ? 'danger' :
-                          pay.status === 'processing' ? 'warning' : 'default'
-                        }>
-                          {pay.status}
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {leadsData.slice(0, 5).map(prop => (
+                  <div key={prop.id} className="flex items-center justify-between px-5 py-3 hover:bg-cyan-50/30 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{prop.title}</p>
+                        <Badge variant={prop.status === 'active' ? 'success' : 'default'} className="text-xs capitalize">
+                          {prop.status.replace(/_/g, ' ')}
                         </Badge>
                       </div>
+                      <p className="text-xs text-gray-500">{prop.city} · {formatCurrency(prop.price, prop.currency)}</p>
                     </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+                    <div className="flex items-center gap-4 text-xs text-gray-500 flex-shrink-0 ml-4">
+                      <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{prop.views || 0}</span>
+                      <span className="flex items-center gap-1 font-semibold text-cyan-600"><Users className="w-3 h-3" />{prop.inquiries || 0} leads</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Performance Overview */}
+          <Card padding="none">
+            <div className="px-5 pt-4 pb-3">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-cyan-600" />
+                Performance Overview
+              </h2>
+            </div>
+            <div className="px-5 pb-5 grid sm:grid-cols-3 gap-4">
+              <div className="bg-cyan-50 rounded-xl p-4 text-center">
+                <Building2 className="w-6 h-6 text-cyan-600 mx-auto mb-2" />
+                <p className="text-2xl font-bold text-gray-900">{properties.length}</p>
+                <p className="text-xs text-gray-500">Total Listings</p>
+              </div>
+              <div className="bg-teal-50 rounded-xl p-4 text-center">
+                <Shield className="w-6 h-6 text-teal-600 mx-auto mb-2" />
+                <p className="text-2xl font-bold text-gray-900">{properties.filter(p => p.is_verified).length}</p>
+                <p className="text-xs text-gray-500">Verified</p>
+              </div>
+              <div className="bg-emerald-50 rounded-xl p-4 text-center">
+                <Star className="w-6 h-6 text-emerald-600 mx-auto mb-2" />
+                <p className="text-2xl font-bold text-gray-900">
+                  {properties.length > 0
+                    ? Math.round(properties.reduce((sum, p) => sum + (p.trust_score || 0), 0) / properties.length)
+                    : '—'}%
+                </p>
+                <p className="text-xs text-gray-500">Avg Trust Score</p>
+              </div>
+            </div>
+          </Card>
+
+          {/* My Listings Quick View */}
+          <Card padding="none">
+            <div className="px-5 pt-4 pb-3 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-cyan-600" />
+                My Listings
+              </h2>
+              <Link href="/properties/my">
+                <Button size="sm" variant="ghost" className="gap-1.5 text-cyan-600">
+                  View All <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
+              </Link>
+            </div>
+            {properties.length === 0 ? (
+              <div className="text-center py-12 px-4">
+                <Building2 className="w-14 h-14 text-gray-200 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">No listings yet</h3>
+                <p className="text-gray-500 text-sm mb-6">List your first property to start attracting buyers.</p>
+                <Link href="/properties/new">
+                  <Button className="gap-2 bg-cyan-600 hover:bg-cyan-500">
+                    <Plus className="w-4 h-4" /> Add Your First Listing
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {properties.slice(0, 5).map(prop => (
+                  <div key={prop.id} className="flex items-center justify-between px-5 py-3 hover:bg-cyan-50/30 transition-colors">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-gray-900 truncate max-w-[200px]">{prop.title}</p>
+                        <Badge variant={prop.status === 'active' ? 'success' : prop.status === 'pending_review' ? 'warning' : 'default'} className="text-xs capitalize">
+                          {prop.status.replace(/_/g, ' ')}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-gray-500">{prop.city} · {formatCurrency(prop.price, prop.currency)}</p>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-gray-400">
+                      <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{prop.views || 0}</span>
+                      <span className="flex items-center gap-1"><Users className="w-3 h-3" />{prop.inquiries || 0}</span>
+                      <Link href={`/properties/edit/${prop.id}`}>
+                        <Button size="sm" variant="ghost" className="text-xs">Edit</Button>
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-5">
+          <QuickActions actions={actions} />
+
+          {/* Earnings Summary */}
+          <Card padding="none">
+            <div className="px-5 pt-4 pb-3">
+              <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-cyan-600" />
+                Earnings Summary
+              </h2>
+            </div>
+            <div className="px-5 pb-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Total Earned</span>
+                <span className="font-bold text-gray-900">KES {totalEarnings.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Pending Payout</span>
+                <span className="font-bold text-amber-600">KES {pendingPayouts.toLocaleString()}</span>
+              </div>
+              <Link href="/wallet">
+                <Button size="sm" variant="outline" className="w-full mt-2 border-cyan-200 text-cyan-700 hover:bg-cyan-50">
+                  <CreditCard className="w-3.5 h-3.5" /> Request Payout
+                </Button>
+              </Link>
+            </div>
+          </Card>
+
+          {/* Pro Tip */}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-cyan-600 to-teal-700 p-6 text-white">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+            <Award className="w-10 h-10 text-cyan-200 mb-4 relative z-10" />
+            <h3 className="font-bold text-lg mb-2 relative z-10">Boost Your Listings</h3>
+            <p className="text-cyan-100 text-sm leading-relaxed mb-5 relative z-10">
+              Verified listings get <strong className="text-white">5x more views</strong>. Verify each property for just KES 500.
+            </p>
+            <Link href="/verify">
+              <Button size="sm" className="bg-white text-cyan-700 hover:bg-cyan-50 w-full relative z-10 font-semibold">
+                <Shield className="w-3.5 h-3.5" /> Verify Listing
+              </Button>
+            </Link>
           </div>
+
+          {/* Recent Payouts Activity */}
+          {payouts.length > 0 && (
+            <ActivityFeed
+              items={payouts.slice(0, 5).map(p => ({
+                id: p.id,
+                title: `Payout — KES ${p.amount_kes.toLocaleString()}`,
+                description: p.payout_type || 'Commission',
+                timestamp: p.created_at,
+                type: p.status === 'completed' ? 'success' as const :
+                      p.status === 'failed' ? 'danger' as const : 'warning' as const,
+              }))}
+              title="Recent Payouts"
+              emptyMessage="No payouts yet"
+            />
+          )}
         </div>
       </div>
     </div>

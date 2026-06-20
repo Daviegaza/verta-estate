@@ -111,16 +111,20 @@ export interface Verification {
 // Payment types
 export type PaymentStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'refunded';
 export type PaymentMethod = 'mpesa' | 'stripe' | 'bank_transfer';
+export type PaymentPurpose = 'verification_report' | 'agent_badge' | 'listing_fee' | 'subscription' | 'transaction_fee' | 'rent' | 'deposit' | 'utility';
 
 export interface Payment {
   id: number;
   amount: number;
   currency: string;
   method: PaymentMethod;
-  purpose: string;
+  purpose: PaymentPurpose;
   status: PaymentStatus;
   reference?: string;
   mpesa_checkout_request_id?: string;
+  mpesa_receipt_number?: string;
+  phone_number?: string;
+  description?: string;
   created_at: string;
 }
 

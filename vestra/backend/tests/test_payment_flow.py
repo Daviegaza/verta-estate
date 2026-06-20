@@ -45,13 +45,17 @@ def _make_callback_payload(
 def registered_user_token(client: AsyncClient):
     """Register and return an access token."""
     async def _register(email="payuser@example.com", role="buyer"):
+        import time as _time
+        ts = str(int(_time.time() * 1000))
         resp = await client.post("/api/auth/register", json={
-            "email": email,
+            "email": f"pay-{ts}@example.com",
+            "phone": f"+2547{ts[-8:]}",
             "full_name": "Payment Tester",
             "password": "StrongP@ss1",
             "role": role,
         })
-        return resp.json()["access_token"]
+        data = resp.json()
+        return data.get("access_token")
     return _register
 
 

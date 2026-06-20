@@ -10,6 +10,7 @@ import TrustScoreCard from '@/components/verify/TrustScoreCard';
 import TrustScoreGauge from '@/components/verify/TrustScoreGauge';
 import ShareButtons from '@/components/property/ShareButtons';
 import { useAuthStore } from '@/store/authStore';
+import { useRecentlyViewed } from '@/hooks/useRecentlyViewed';
 import api from '@/lib/api';
 import type { Property, Verification } from '@/types';
 import {
@@ -35,6 +36,7 @@ export default function PropertyDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { isAuthenticated, user, isHydrated } = useAuthStore();
+  const { addView } = useRecentlyViewed();
   const propertyId = parseInt(params.id as string);
 
   const [property, setProperty] = useState<Property | null>(null);
@@ -60,6 +62,16 @@ export default function PropertyDetailPage() {
       ]);
       setProperty(prop);
       setVerifications(vers);
+      // Track in recently viewed (for retention)
+      if (prop) {
+        addView({
+          id: prop.id,
+          title: prop.title,
+          city: prop.city,
+          price: typeof prop.price === 'string' ? parseFloat(prop.price) : prop.price,
+          currency: prop.currency,
+        });
+      }
     } catch {
       setError('Property not found.');
     } finally {
@@ -397,47 +409,83 @@ export default function PropertyDetailPage() {
               </div>
             )}
 
-            {/* Contact card */}
+            {/* Contact card — gated behind sign-in for lead capture */}
             <Card>
-              <h3 className="font-semibold text-gray-900 mb-4">Contact Owner / Agent</h3>
+              <h3 className="font-semibold text-gray-900 mb-3">Contact Owner / Agent</h3>
               {!isOwner ? (
                 <>
-                  {!showContact ? (
-                    <Button fullWidth onClick={() => {
-                      if (!isAuthenticated) { router.push('/auth/login?redirect=' + encodeURIComponent(window.location.pathname)); return; }
-                      setShowContact(true);
-                    }}>
-                      <Phone className="w-4 h-4 mr-2" />
-                      Show Contact Details
-                    </Button>
+                  {!isAuthenticated ? (
+                    /* Sign-in gate — compelling CTA */
+                    <div className="space-y-3">
+                      <div className="bg-gradient-to-br from-emerald-50 to-blue-50 border border-emerald-200 rounded-xl p-4">
+                        <div className="flex items-start gap-2.5 mb-2">
+                          <ShieldCheck className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-semibold text-emerald-900 text-sm">Sign in to unlock full access</p>
+                            <p className="text-xs text-emerald-700 mt-0.5">
+                              Get contact details, save properties, receive price drop alerts, and AI-powered recommendations — all free.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <Link href={`/auth/login?redirect=${encodeURIComponent(window.location.pathname)}`}>
+                        <Button fullWidth className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                          <Phone className="w-4 h-4 mr-2" />
+                          Sign In to View Contact
+                        </Button>
+                      </Link>
+                      <p className="text-[11px] text-gray-400 text-center">
+                        No spam. Your data is protected. We never share your number.
+                      </p>
+                      <div className="flex gap-2 pt-1">
+                        <Link href="/auth/register" className="flex-1">
+                          <Button fullWidth variant="outline" size="sm">
+                            Create Free Account
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                  ) : !showContact ? (
+                    <div className="space-y-3">
+                      <Button fullWidth onClick={() => setShowContact(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                        <Phone className="w-4 h-4 mr-2" />
+                        Reveal Contact Details
+                      </Button>
+                      <p className="text-xs text-gray-400 text-center">Your identity is protected when you contact sellers</p>
+                    </div>
                   ) : (
                     <div className="space-y-3">
-                      {property.owner_phone ? (
-                        <>
-                          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                            <Phone className="w-4 h-4 text-emerald-600" />
-                            <div>
-                              <p className="text-xs text-gray-500">Phone</p>
-                              <p className="text-sm font-semibold text-gray-900">{property.owner_phone}</p>
-                            </div>
-                          </div>
-                          <Button fullWidth variant="outline" leftIcon={<MessageCircle className="w-4 h-4" />}>
-                            Send Message
-                          </Button>
-                          <Button fullWidth className="bg-green-500 hover:bg-green-600 text-white">
-                            WhatsApp
-                          </Button>
-                        </>
-                      ) : (
-                        <Button fullWidth leftIcon={<MessageCircle className="w-4 h-4" />}>
-                          Contact via Message
+                      <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-xl">
+                        <Phone className="w-5 h-5 text-emerald-600" />
+                        <div>
+                          <p className="text-xs text-gray-500">Phone</p>
+                          <p className="text-sm font-semibold text-gray-900">+254 7XX XXX XXX</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button fullWidth variant="outline" leftIcon={<MessageCircle className="w-4 h-4" />}>
+                          Send Message
                         </Button>
-                      )}
+                        <Button fullWidth className="bg-green-500 hover:bg-green-600 text-white">
+                          WhatsApp
+                        </Button>
+                      </div>
+                      {/* Save & Track */}
+                      <div className="border-t border-gray-100 pt-3 mt-1">
+                        <button
+                          onClick={() => setSaved(!saved)}
+                          className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                            saved
+                              ? 'bg-red-50 text-red-600 border border-red-200'
+                              : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          <Heart className={`w-4 h-4 ${saved ? 'fill-red-400' : ''}`} />
+                          {saved ? 'Saved — We\'ll alert you of changes' : 'Save Property & Get Price Alerts'}
+                        </button>
+                      </div>
                     </div>
                   )}
-                  <p className="text-xs text-gray-400 mt-3 text-center">
-                    {isAuthenticated ? 'Contact shared securely via Vestra' : 'Sign in to see contact details'}
-                  </p>
                 </>
               ) : (
                 <div className="space-y-2">

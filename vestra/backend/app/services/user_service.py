@@ -43,7 +43,12 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
 
-    # ── Referral flow ──────────────────────────────────────────────────────────
+    # ── Generate user's own referral code ──────────────────────────────────────
+    from app.services.referral_engine import generate_referral_code
+
+    await generate_referral_code(db, user.id)
+
+    # ── Referral flow (if user was referred by someone) ─────────────────────────
     if referral_code:
         from app.services.referral_engine import track_referral_signup, award_referral_reward
 
@@ -53,6 +58,7 @@ async def create_user(
                 '{"event":"referral_flow_triggered","user_id":%d,"referrer_id":%d,"action":"signup_verified"}',
                 user.id, track_result["referrer_id"],
             )
+            # Award signup reward to referrer
             await award_referral_reward(db, user.id, "signup_verified")
         else:
             logger.warning(

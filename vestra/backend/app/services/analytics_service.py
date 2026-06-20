@@ -6,15 +6,52 @@ price change, and payment behavior.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text, case, and_
 
 from app.models.analytics import UserEvent, PriceChange, VerificationOutcome, SearchAnalytics
+from app.models.user import User
 
 logger = logging.getLogger("vestra")
+
+# ── Event Type Constants ───────────────────────────────────────────────────────
+
+# User lifecycle
+EVENT_REGISTRATION = "registration"
+EVENT_EMAIL_VERIFIED = "email_verified"
+EVENT_KYC_SUBMITTED = "kyc_submitted"
+EVENT_KYC_APPROVED = "kyc_approved"
+
+# Property engagement
+EVENT_PROPERTY_VIEWED = "property_viewed"
+EVENT_PROPERTY_FAVORITED = "property_favorited"
+EVENT_PROPERTY_INQUIRED = "property_inquired"
+
+# Search
+EVENT_SEARCH_PERFORMED = "search_performed"
+EVENT_SEARCH_RESULT_CLICKED = "search_result_clicked"
+
+# Payments
+EVENT_PAYMENT_INITIATED = "payment_initiated"
+EVENT_PAYMENT_COMPLETED = "payment_completed"
+EVENT_PAYMENT_FAILED = "payment_failed"
+
+# Subscriptions
+EVENT_SUBSCRIPTION_STARTED = "subscription_started"
+EVENT_SUBSCRIPTION_UPGRADED = "subscription_upgraded"
+EVENT_SUBSCRIPTION_CANCELLED = "subscription_cancelled"
+
+# Verification
+EVENT_VERIFICATION_REQUESTED = "verification_requested"
+EVENT_VERIFICATION_COMPLETED = "verification_completed"
+
+# Referral
+EVENT_REFERRAL_SHARED = "referral_shared"
+EVENT_REFERRAL_SIGNUP = "referral_signup"
+EVENT_REFERRAL_CONVERTED = "referral_converted"
 
 # ── User Events ──────────────────────────────────────────────────────────────────
 
@@ -155,6 +192,268 @@ async def get_top_searches(db: AsyncSession, limit: int = 20) -> list:
         .limit(limit)
     )
     return [{"query": row.query, "count": row.count} for row in result.all()]
+
+
+# ── Conversion Funnel ──────────────────────────────────────────────────────────
+
+
+async def get_conversion_funnel(
+    db: AsyncSession,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+) -> list[dict]:
+    """
+    Get conversion funnel: visitor -> registered -> verified -> made_payment -> subscribed.
+
+    Returns a list of funnel stages with counts, each stage filtering down from the previous.
+    """
+    if not end_date:
+        end_date = datetime.now(timezone.utc)
+    if not start_date:
+        start_date = end_date - timedelta(days=90)
+
+    # Stage 1: All users (registered)
+    total_users = await db.execute(
+        select(func.count(User.id)).where(
+            User.created_at >= start_date,
+            User.created_at <= end_date,
+        )
+    )
+    registered = total_users.scalar_one()
+
+    # Stage 2: Verified email
+    verified = await db.execute(
+        select(func.count(User.id)).where(
+            User.is_verified == True,
+            User.created_at >= start_date,
+            User.created_at <= end_date,
+        )
+    )
+    verified_count = verified.scalar_one()
+
+    # Stage 3: Made at least one payment
+    from app.models.payment import Payment, PaymentStatus
+    paid_users = await db.execute(
+        select(func.count(func.distinct(Payment.user_id))).where(
+            Payment.status == PaymentStatus.completed,
+            Payment.created_at >= start_date,
+            Payment.created_at <= end_date,
+        )
+    )
+    paid_count = paid_users.scalar_one()
+
+    # Stage 4: Has active subscription
+    from app.models.subscription import Subscription, SubscriptionStatus
+    subscribed_users = await db.execute(
+        select(func.count(func.distinct(Subscription.user_id))).where(
+            Subscription.status.in_([SubscriptionStatus.active, SubscriptionStatus.trialing]),
+            Subscription.created_at >= start_date,
+            Subscription.created_at <= end_date,
+        )
+    )
+    subscribed_count = subscribed_users.scalar_one()
+
+    # Stage 5: KYC approved
+    from app.models.kyc_notification import KYCVerification, KYCStatus
+    kyc_approved = await db.execute(
+        select(func.count(func.distinct(KYCVerification.user_id))).where(
+            KYCVerification.status == KYCStatus.approved,
+            KYCVerification.created_at >= start_date,
+            KYCVerification.created_at <= end_date,
+        )
+    )
+    kyc_count = kyc_approved.scalar_one()
+
+    stages = [
+        {"stage": "Registered", "count": registered, "conversion_pct": 100.0},
+        {"stage": "Email Verified", "count": verified_count, "conversion_pct": _pct(verified_count, registered)},
+        {"stage": "KYC Approved", "count": kyc_count, "conversion_pct": _pct(kyc_count, registered)},
+        {"stage": "Made Payment", "count": paid_count, "conversion_pct": _pct(paid_count, registered)},
+        {"stage": "Subscribed", "count": subscribed_count, "conversion_pct": _pct(subscribed_count, registered)},
+    ]
+
+    return stages
+
+
+# ── Cohort Retention ──────────────────────────────────────────────────────────
+
+
+async def get_cohort_retention(db: AsyncSession, weeks: int = 8) -> list[dict]:
+    """
+    Weekly user retention cohorts.
+
+    Groups users by the week they registered, then shows what percentage
+    were active (made a payment, created a listing, or logged an event)
+    in each subsequent week.
+
+    Returns a list of cohort rows, each with:
+      - cohort_week: ISO week string (e.g., "2026-W20")
+      - total_users: number of users who registered that week
+      - periods: list of dicts with week_offset, active_users, retention_pct
+    """
+    from app.models.payment import Payment, PaymentStatus
+
+    now = datetime.now(timezone.utc)
+
+    # Get all users with their registration weeks
+    all_users = await db.execute(
+        select(
+            User.id,
+            func.date_trunc('week', User.created_at).label('cohort_week'),
+        ).order_by(User.created_at.desc())
+    )
+    user_rows = all_users.all()
+
+    if not user_rows:
+        return []
+
+    # Build cohort buckets: cohort_week -> set of user_ids
+    cohorts = {}
+    for row in user_rows:
+        week_key = row.cohort_week.strftime('%Y-W%V')
+        if week_key not in cohorts:
+            cohorts[week_key] = {"users": set(), "total": 0}
+        cohorts[week_key]["users"].add(row.id)
+        cohorts[week_key]["total"] += 1
+
+    # Get all payment activity (as proxy for "active")
+    payments = await db.execute(
+        select(Payment.user_id, Payment.created_at).where(
+            Payment.status == PaymentStatus.completed,
+        )
+    )
+    payment_rows = payments.all()
+
+    # Build user activity map: user_id -> set of week offsets from their cohort
+    from collections import defaultdict
+    user_activity = defaultdict(set)
+
+    for user_id, cohort_week_key in ((r.id, r.cohort_week.strftime('%Y-W%V')) for r in user_rows):
+        for _, created_at in payment_rows:
+            if _ == user_id:
+                payment_week = created_at.strftime('%Y-W%V')
+                # Calculate week offset
+                try:
+                    from datetime import date
+                    cohort_start = _parse_iso_week(cohort_week_key)
+                    payment_start = _parse_iso_week(payment_week)
+                    if payment_start >= cohort_start:
+                        offset = int((payment_start - cohort_start).days / 7)
+                        if offset <= weeks:
+                            user_activity[(user_id, cohort_week_key)].add(offset)
+                except (ValueError, IndexError):
+                    pass
+
+    # Build response
+    result = []
+    sorted_cohorts = sorted(cohorts.keys(), reverse=True)[:weeks * 2]  # Show recent cohorts
+
+    for cohort_key in sorted_cohorts:
+        cohort = cohorts[cohort_key]
+        total = cohort["total"]
+        if total == 0:
+            continue
+
+        periods = []
+        for offset in range(weeks + 1):
+            active = 0
+            for uid in cohort["users"]:
+                if offset in user_activity.get((uid, cohort_key), set()):
+                    active += 1
+
+            periods.append({
+                "week_offset": offset,
+                "active_users": active,
+                "retention_pct": round((active / max(total, 1)) * 100, 1),
+            })
+
+        result.append({
+            "cohort_week": cohort_key,
+            "total_users": total,
+            "periods": periods,
+        })
+
+    return result
+
+
+# ── Event type aggregation ─────────────────────────────────────────────────────
+
+
+async def get_event_counts_by_type(
+    db: AsyncSession,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    limit: int = 50,
+) -> list[dict]:
+    """Get count of events grouped by event_type."""
+    if not end_date:
+        end_date = datetime.now(timezone.utc)
+    if not start_date:
+        start_date = end_date - timedelta(days=30)
+
+    result = await db.execute(
+        select(
+            UserEvent.event_type,
+            func.count(UserEvent.id).label('count'),
+        )
+        .where(
+            UserEvent.created_at >= start_date,
+            UserEvent.created_at <= end_date,
+        )
+        .group_by(UserEvent.event_type)
+        .order_by(func.count(UserEvent.id).desc())
+        .limit(limit)
+    )
+    return [
+        {"event_type": row.event_type, "count": row.count}
+        for row in result.all()
+    ]
+
+
+async def get_daily_active_users(
+    db: AsyncSession,
+    days: int = 30,
+) -> list[dict]:
+    """Get daily active users (users with any event in a given day)."""
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days)
+
+    result = await db.execute(
+        select(
+            func.date_trunc('day', UserEvent.created_at).label('day'),
+            func.count(func.distinct(UserEvent.user_id)).label('dau'),
+        )
+        .where(
+            UserEvent.created_at >= start,
+            UserEvent.user_id.isnot(None),
+        )
+        .group_by(text('day'))
+        .order_by(text('day'))
+    )
+    return [
+        {"date": row.day.strftime('%Y-%m-%d'), "dau": row.dau}
+        for row in result.all()
+    ]
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+
+def _pct(part: int, total: int) -> float:
+    """Calculate percentage, avoiding division by zero."""
+    return round((part / max(total, 1)) * 100, 1)
+
+
+def _parse_iso_week(iso_key: str) -> date:
+    """Parse 'YYYY-WNN' ISO week string to a date (Monday of that week)."""
+    from datetime import date
+    year, week = iso_key.split('-W')
+    # Python's isoweek calculation
+    first_of_jan = date(int(year), 1, 1)
+    # Find the first Monday of the year
+    days_to_first_monday = (7 - first_of_jan.weekday()) % 7
+    first_monday = first_of_jan + timedelta(days=days_to_first_monday)
+    return first_monday + timedelta(weeks=int(week) - 1)
 
 
 async def get_search_conversion_rate(db: AsyncSession) -> dict:

@@ -51,22 +51,25 @@ class TestInMemoryRateLimiter:
 
     def test_window_expires(self):
         """After the window passes, the bucket should reset."""
-        limiter = InMemoryRateLimiter(max_requests=2, window_seconds=0)
-        # With a zero-length window, the prune loop runs immediately,
-        # so entries expire as soon as they pass the window_start check.
-        # A window of 0 means the window_start == now, so every existing
-        # entry is pruned before the check.
+        import time as _time
+        limiter = InMemoryRateLimiter(max_requests=2, window_seconds=1)
         assert limiter.is_allowed("client-1") is True
         assert limiter.is_allowed("client-1") is True
-        assert limiter.is_allowed("client-1") is True  # Always allowed with window=0
+        assert limiter.is_allowed("client-1") is False  # At limit
+        # Wait for the window to expire
+        _time.sleep(1.1)
+        # Now the window has passed — should be allowed again
+        assert limiter.is_allowed("client-1") is True
 
     def test_cleanup_removes_stale_buckets(self):
-        limiter = InMemoryRateLimiter(max_requests=5, window_seconds=0)
+        import time as _time
+        limiter = InMemoryRateLimiter(max_requests=5, window_seconds=0.1)
         limiter.is_allowed("client-1")
         limiter.is_allowed("client-2")
         assert len(limiter._buckets) >= 2
+        # Wait for 2x window to expire so cleanup removes them
+        _time.sleep(0.3)
         limiter.cleanup()
-        # With window=0, cleanup should remove everything
         assert len(limiter._buckets) == 0
 
     def test_thread_safety(self):

@@ -76,7 +76,7 @@ class TestEnqueue:
 
 class TestTaskConfigs:
     def test_all_registered_tasks_have_config(self):
-        registered = {"notification", "email", "webhook", "analytics", "cleanup", "report"}
+        registered = {"notification", "email", "webhook", "analytics", "cleanup", "report", "lifecycle_notifications"}
         for task_type in registered:
             config = TASK_CONFIGS.get(task_type, DEFAULT_TASK_CONFIG)
             assert config[0] > 0, f"{task_type}: max_retries must be > 0"
@@ -108,3 +108,13 @@ class TestHandlerRegistration:
 
     def test_email_handler_registered(self):
         assert "email" in _handlers, "email handler should be registered on import"
+
+    def test_analytics_handler_registered(self):
+        assert "analytics" in _handlers, "analytics handler should be registered on import"
+
+    def test_cleanup_handler_registered(self):
+        assert "cleanup" in _handlers, "cleanup handler should be registered on import"
+
+    def test_lifecycle_notifications_handler_registered(self):
+        assert "lifecycle_notifications" in _handlers, \
+            "lifecycle_notifications handler should be registered on import"

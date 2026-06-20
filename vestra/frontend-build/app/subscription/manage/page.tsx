@@ -121,7 +121,7 @@ function ManageSubscriptionContent() {
       setSubData(sub);
 
       const billing = (payments || [])
-        .filter((p) => p.purpose === 'subscription' || p.purpose === 'Subscription')
+        .filter((p) => p.purpose === 'subscription')
         .slice(0, 5);
       setBillingHistory(billing);
     } catch (err: any) {

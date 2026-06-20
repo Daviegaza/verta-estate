@@ -89,9 +89,14 @@ async def register(
     asyncio.create_task(
         fire_and_forget_track_user_event(
             user_id=user.id,
-            event_type="register",
+            event_type="registration",
             event_data={"email": user.email, "role": user.role.value if user.role else "buyer"},
         )
+    )
+
+    # ── Fire-and-forget: send welcome notification ───────────────────────
+    asyncio.create_task(
+        _bg_send_welcome_notification(user.id, user.full_name)
     )
 
     return Token(access_token=token, user=UserResponse.model_validate(user))
@@ -280,6 +285,25 @@ async def reset_password(data: ResetPasswordRequest, db: AsyncSession = Depends(
     return {"message": "Password has been reset. You can now log in."}
 
 
+# ── Referral Code ──────────────────────────────────────────────────────────────
+
+
+@router.get("/referral-code")
+async def get_auth_referral_code(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get current user's referral code, stats, and share link."""
+    from app.services.referral_engine import get_user_referral_stats, generate_referral_code
+
+    # Ensure code exists
+    if not current_user.referral_code:
+        await generate_referral_code(db, current_user.id)
+
+    stats = await get_user_referral_stats(db, current_user.id)
+    return stats
+
+
 # ── Email Verification ─────────────────────────────────────────────────────────
 
 @router.post("/verify-email")
@@ -308,6 +332,20 @@ async def verify_email(token: str = "", db: AsyncSession = Depends(get_db)):
     # Send welcome email
     import asyncio
     asyncio.create_task(send_welcome_email(user.email, user.full_name))
+
+    # ── Track referral status: signed_up → active (verified) ──────────────
+    from app.services.referral_engine import track_referral_verified, award_referral_reward
+
+    asyncio.create_task(_bg_update_referral_on_verify(user.id))
+
+    # ── Fire analytics event: email_verified ──────────────────────────────
+    asyncio.create_task(
+        fire_and_forget_track_user_event(
+            user_id=user.id,
+            event_type="email_verified",
+            event_data={"email": user.email},
+        )
+    )
 
     return {"message": "Email verified successfully. You can now log in."}
 
@@ -410,3 +448,33 @@ async def logout(current_user=Depends(get_current_user)):
     """
     await revoke_all_refresh_tokens(current_user.id)
     return {"message": "Logged out successfully"}
+
+
+# ── Background helpers ─────────────────────────────────────────────────────────
+
+
+async def _bg_send_welcome_notification(user_id: int, full_name: str) -> None:
+    """Fire-and-forget: send welcome notification after registration."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.notification_service import send_welcome_notification
+
+    try:
+        async with AsyncSessionLocal() as bg_db:
+            await send_welcome_notification(bg_db, user_id, full_name)
+    except Exception:
+        logger.warning('{"event":"bg_welcome_notification_failed","user_id":%d}', user_id)
+
+
+async def _bg_update_referral_on_verify(user_id: int) -> None:
+    """Fire-and-forget: update referral to active on email verification."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.referral_engine import track_referral_verified, award_referral_reward
+    from app.services.analytics_service import fire_and_forget_track_user_event
+
+    try:
+        async with AsyncSessionLocal() as bg_db:
+            await track_referral_verified(bg_db, user_id)
+            # Also award the signup_verified reward if not already done
+            await award_referral_reward(bg_db, user_id, "signup_verified")
+    except Exception:
+        logger.warning('{"event":"bg_referral_verify_failed","user_id":%d}', user_id)

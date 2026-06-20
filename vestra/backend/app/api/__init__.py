@@ -24,6 +24,7 @@ from app.api.routes.reviews import router as reviews_router
 from app.api.routes.payouts import router as payouts_router
 from app.api.routes.coupons import router as coupons_router
 from app.api.routes.title_chain import router as title_chain_router
+from app.api.routes.referrals import router as referrals_router
 
 # ── Helper: include all sub-routers into a given parent router ──────────────────
 
@@ -53,6 +54,7 @@ def _include_all_routers(router: APIRouter) -> None:
     router.include_router(payouts_router)
     router.include_router(coupons_router)
     router.include_router(title_chain_router)
+    router.include_router(referrals_router)
 
 
 # ── Canonical v1 Router ─────────────────────────────────────────────────────────

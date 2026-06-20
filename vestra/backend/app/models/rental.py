@@ -49,8 +49,10 @@ class RentalUnit(Base):
     id = Column(Integer, primary_key=True, index=True)
     landlord_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True)  # Linked property listing
-    name = Column(String(200), nullable=False)       # e.g., "Unit 3B" or "Kilimani Apt #4"
-    unit_type = Column(String(50), nullable=False)   # apartment, house, studio, bedsitter
+    building_name = Column(String(200), nullable=True)     # e.g., "Sunset Apartments", "Kilimani Heights"
+    name = Column(String(200), nullable=False)             # e.g., "Unit 3B", "Flat 12", "A-204"
+    unit_number = Column(String(20), nullable=True)         # e.g., "1A", "2B", "G1", "PH1"
+    unit_type = Column(String(50), nullable=False)          # bedsitter, 1br, 2br, 3br, studio, penthouse
     bedrooms = Column(Integer, default=1)
     bathrooms = Column(Integer, default=1)
     floor = Column(Integer, nullable=True)
@@ -60,8 +62,11 @@ class RentalUnit(Base):
     county = Column(String(100), nullable=False, default="")
     monthly_rent_kes = Column(Numeric(12, 2), nullable=False)
     deposit_kes = Column(Numeric(12, 2), default=0)
+    water_kes = Column(Numeric(10, 2), default=0)          # Monthly water bill
+    electricity_kes = Column(Numeric(10, 2), default=0)     # Monthly electricity
+    service_charge_kes = Column(Numeric(10, 2), default=0)  # Service charge / HOA
     is_occupied = Column(Boolean, default=False)
-    amenities = Column(JSON, default=list)
+    amenities = Column(JSON, default=list)                 # ["parking", "gym", "lift", "cctv", "borehole"]
     images = Column(JSON, default=list)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -149,6 +154,90 @@ class RentPayment(Base):
 
     tenant = relationship("Tenant", back_populates="payments")
     unit = relationship("RentalUnit")
+
+
+# ── Payment Arrangement (Flexible Payment Plan) ────────────────────────────────
+
+class ArrangementStatus(str, enum.Enum):
+    requested = "requested"
+    approved = "approved"
+    active = "active"
+    completed = "completed"
+    cancelled = "cancelled"
+    declined = "declined"
+
+
+class PaymentArrangement(Base):
+    """
+    Flexible payment plan for tenants who need to split rent into installments.
+    Example: A tenant owing KES 30,000 can pay KES 10,000 on 5th, 15th, and 25th
+    instead of all at once on the 1st.
+    """
+    __tablename__ = "payment_arrangements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    unit_id = Column(Integer, ForeignKey("rental_units.id"), nullable=False)
+    lease_id = Column(Integer, ForeignKey("leases.id"), nullable=True)
+    total_amount_kes = Column(Numeric(12, 2), nullable=False)
+    remaining_balance_kes = Column(Numeric(12, 2), nullable=False)
+    number_of_installments = Column(Integer, nullable=False)
+    installments_paid = Column(Integer, default=0)
+    status = Column(Enum(ArrangementStatus), default=ArrangementStatus.requested)
+    reason = Column(Text, nullable=True)  # Tenant's reason for requesting arrangement
+    landlord_notes = Column(Text, nullable=True)
+    start_date = Column(DateTime(timezone=True), nullable=False)
+    end_date = Column(DateTime(timezone=True), nullable=False)  # Must be within the month
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    tenant = relationship("Tenant")
+
+
+class InstallmentPayment(Base):
+    """Individual installment within a payment arrangement."""
+    __tablename__ = "installment_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    arrangement_id = Column(Integer, ForeignKey("payment_arrangements.id"), nullable=False, index=True)
+    amount_kes = Column(Numeric(12, 2), nullable=False)
+    amount_paid_kes = Column(Numeric(12, 2), default=0)
+    due_date = Column(DateTime(timezone=True), nullable=False)
+    paid_date = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(20), default="pending")  # pending, paid, late, skipped
+    mpesa_receipt = Column(String(100), nullable=True)
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    arrangement = relationship("PaymentArrangement")
+
+
+# ── Rent Collection Configuration (per lease) ──────────────────────────────────
+
+class RentCollectionConfig(Base):
+    """
+    Per-lease configuration for rent collection flexibility.
+    Allows landlords to set custom grace periods, late fee structures,
+    and enable/disable auto-collection features.
+    """
+    __tablename__ = "rent_collection_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lease_id = Column(Integer, ForeignKey("leases.id"), nullable=False, unique=True)
+    grace_period_days = Column(Integer, default=5)  # Days after due date before late fees
+    late_fee_type = Column(String(20), default="fixed")  # fixed, percentage, none
+    late_fee_amount_kes = Column(Numeric(12, 2), default=100)  # Fixed late fee per day
+    late_fee_percent = Column(Numeric(5, 2), default=2.0)  # Percentage of rent
+    late_fee_max_kes = Column(Numeric(12, 2), default=3000)  # Cap on late fees
+    allow_partial_payments = Column(Boolean, default=True)  # Accept partial rent payments
+    allow_payment_arrangements = Column(Boolean, default=True)  # Allow installment plans
+    auto_apply_late_fees = Column(Boolean, default=True)
+    reminders_enabled = Column(Boolean, default=True)
+    reminder_days_before = Column(JSON, default=[3, 1])  # e.g., remind 3 days and 1 day before
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    lease = relationship("Lease")
 
 
 # ── Maintenance Request ───────────────────────────────────────────────────────

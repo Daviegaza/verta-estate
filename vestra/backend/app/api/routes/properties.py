@@ -32,6 +32,25 @@ async def create_new_property(
     """Create a new property listing. Enforces subscription limits."""
     try:
         prop = await create_property(db, current_user.id, data)
+
+        # ── Fire-and-forget: track property_created event ──────────────────
+        asyncio.create_task(
+            fire_and_forget_track_user_event(
+                user_id=current_user.id,
+                event_type="property_created",
+                event_data={"property_id": prop.id, "title": prop.title, "city": prop.city},
+            )
+        )
+
+        # ── Fire-and-forget: send verify property prompt ──────────────────
+        asyncio.create_task(
+            _bg_send_verify_property_prompt(
+                user_id=current_user.id,
+                property_id=prop.id,
+                property_title=prop.title,
+            )
+        )
+
         return _prop_to_dict(prop)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(e))
@@ -163,6 +182,141 @@ async def get_property(
     return result
 
 
+@router.get("/{property_id}/seo")
+async def get_property_seo(
+    property_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Public SEO metadata for a property listing.
+    Returns Open Graph, Twitter Card, and structured data for search engines
+    and social media sharing (WhatsApp, Twitter, Facebook, etc.).
+    """
+    prop = await get_property_by_id(db, property_id)
+    if not prop or (isinstance(prop, dict) and not prop.get("is_deleted", True)):
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    # Handle both dict and ORM
+    if isinstance(prop, dict):
+        title = prop.get("title", "")
+        desc = prop.get("description", "") or ""
+        city = prop.get("city", "")
+        price = prop.get("price", 0)
+        currency = prop.get("currency", "KES")
+        prop_type = prop.get("property_type", "residential")
+        listing_type = prop.get("listing_type", "sale")
+        trust_score = prop.get("trust_score")
+        images = prop.get("images", []) or []
+        bedrooms = prop.get("bedrooms")
+        bathrooms = prop.get("bathrooms")
+        size_sqft = prop.get("size_sqft")
+    else:
+        title = prop.title
+        desc = prop.description or ""
+        city = prop.city
+        price = float(prop.price) if prop.price else 0
+        currency = prop.currency or "KES"
+        prop_type = prop.property_type.value if prop.property_type else "residential"
+        listing_type = prop.listing_type.value if prop.listing_type else "sale"
+        trust_score = prop.trust_score
+        images = prop.images or []
+        bedrooms = prop.bedrooms
+        bathrooms = prop.bathrooms
+        size_sqft = prop.size_sqft
+
+    # Build display price
+    listing_label = "For Sale" if listing_type == "sale" else "For Rent" if listing_type == "rent" else "For Lease"
+    price_display = f"KES {int(price):,}"
+    if listing_type == "rent":
+        price_display += "/month"
+
+    # Trust badge
+    trust_badge = None
+    if trust_score is not None:
+        t = float(trust_score) if not isinstance(trust_score, (int, float)) else trust_score
+        if t >= 90:
+            trust_badge = "Platinum Verified"
+        elif t >= 75:
+            trust_badge = "Gold Verified"
+        elif t >= 60:
+            trust_badge = "Silver Verified"
+        elif t >= 40:
+            trust_badge = "Bronze Verified"
+
+    # Description meta (max 160 chars)
+    meta_desc = f"{listing_label}: {title} in {city}, {currency} {int(price):,}"
+    if trust_badge:
+        meta_desc += f" | {trust_badge}"
+    meta_desc += f" | {prop_type.capitalize()}"
+    if bedrooms:
+        meta_desc += f" | {bedrooms}br"
+    meta_desc = meta_desc[:160]
+
+    # First image
+    og_image = images[0] if images else "https://vestra.co.ke/og-default.jpg"
+
+    # Structured data (JSON-LD for Google)
+    structured_data = {
+        "@context": "https://schema.org",
+        "@type": "SingleFamilyResidence" if prop_type == "residential" else "Place",
+        "name": title,
+        "description": desc[:300],
+        "address": {
+            "@type": "PostalAddress",
+            "addressLocality": city,
+            "addressCountry": "KE",
+        },
+        "offers": {
+            "@type": "Offer",
+            "price": int(price),
+            "priceCurrency": currency,
+        },
+    }
+    if listing_type == "rent":
+        structured_data["offers"]["businessFunction"] = "https://purl.org/goodrelations/v1#LeaseOut"
+        structured_data["offers"]["unitText"] = "MONTH"
+    if bedrooms:
+        structured_data["numberOfBedrooms"] = bedrooms
+    if bathrooms:
+        structured_data["numberOfBathroomsTotal"] = bathrooms
+
+    return {
+        "title": meta_desc[:70],
+        "description": meta_desc,
+        "openGraph": {
+            "title": f"{title} — {price_display}",
+            "description": meta_desc,
+            "image": og_image,
+            "url": f"https://vestra.co.ke/properties/{property_id}",
+            "type": "product",
+        },
+        "twitter": {
+            "card": "summary_large_image",
+            "title": f"{title} — {price_display}",
+            "description": meta_desc,
+            "image": og_image,
+        },
+        "structuredData": structured_data,
+        "property": {
+            "id": property_id,
+            "title": title,
+            "price": int(price),
+            "priceDisplay": price_display,
+            "currency": currency,
+            "city": city,
+            "listingType": listing_type,
+            "listingLabel": listing_label,
+            "propertyType": prop_type,
+            "trustScore": trust_score,
+            "trustBadge": trust_badge,
+            "bedrooms": bedrooms,
+            "bathrooms": bathrooms,
+            "sizeSqft": size_sqft,
+            "thumbnail": og_image,
+        },
+    }
+
+
 @router.put("/{property_id}")
 async def update_property_endpoint(
     property_id: int,
@@ -283,3 +437,31 @@ async def listing_fee_info(
             f"You have unlimited listings."
         ),
     }
+
+
+# ── Background helpers ─────────────────────────────────────────────────────────
+
+
+async def _bg_send_verify_property_prompt(
+    user_id: int,
+    property_id: int,
+    property_title: str,
+) -> None:
+    """Fire-and-forget: send verify-property notification."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.notification_service import send_verify_property_prompt
+
+    try:
+        async with AsyncSessionLocal() as bg_db:
+            await send_verify_property_prompt(
+                db=bg_db,
+                user_id=user_id,
+                property_id=property_id,
+                property_title=property_title,
+            )
+    except Exception:
+        logger = __import__("logging").getLogger("vestra")
+        logger.warning(
+            '{"event":"bg_verify_prompt_failed","user_id":%d,"property_id":%d}',
+            user_id, property_id,
+        )

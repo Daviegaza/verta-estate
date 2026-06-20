@@ -37,8 +37,8 @@ async def valuate_property(
     # Build cache key from inputs (hash for cheap lookup — NOTE: address not in key)
     raw = json.dumps({
         "pt": property_type, "lt": listing_type, "city": city, "county": county,
-        "sqft": size_sqft or 0, "beds": bedrooms or 0, "baths": bathrooms or 0,
-        "yr": year_built or 0, "amen": sorted(amenities), "price": submitted_price,
+        "sqft": float(size_sqft or 0), "beds": bedrooms or 0, "baths": bathrooms or 0,
+        "yr": year_built or 0, "amen": sorted(amenities), "price": float(submitted_price),
     }, sort_keys=True)
     cache_key = f"vestra:val:{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
 

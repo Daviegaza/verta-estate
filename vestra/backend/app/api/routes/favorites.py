@@ -36,6 +36,68 @@ async def list_favorites(
     }
 
 
+@router.get("/my")
+async def list_favorites_enriched(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get user's saved properties with full property details (for buyer dashboard)."""
+    from sqlalchemy.orm import joinedload
+    from app.models.property import Property
+
+    result = await db.execute(
+        select(SavedProperty)
+        .where(SavedProperty.user_id == current_user.id)
+        .order_by(SavedProperty.created_at.desc())
+    )
+    saved = result.scalars().all()
+    property_ids = [s.property_id for s in saved]
+
+    if not property_ids:
+        return []
+
+    # Fetch full property details
+    result = await db.execute(
+        select(Property)
+        .options(joinedload(Property.owner))
+        .where(Property.id.in_(property_ids))
+    )
+    props = {p.id: p for p in result.unique().scalars().all()}
+
+    enriched = []
+    for s in saved:
+        prop = props.get(s.property_id)
+        if prop:
+            enriched.append({
+                "id": prop.id,
+                "owner_id": prop.owner_id,
+                "owner_name": prop.owner.full_name if prop.owner else None,
+                "title": prop.title,
+                "description": prop.description,
+                "property_type": prop.property_type.value if prop.property_type else None,
+                "listing_type": prop.listing_type.value if prop.listing_type else None,
+                "status": prop.status.value if prop.status else None,
+                "address": prop.address,
+                "city": prop.city,
+                "county": prop.county,
+                "price": float(prop.price) if prop.price else 0,
+                "currency": prop.currency or "KES",
+                "bedrooms": prop.bedrooms,
+                "bathrooms": prop.bathrooms,
+                "size_sqft": float(prop.size_sqft) if prop.size_sqft else None,
+                "trust_score": float(prop.trust_score) if prop.trust_score else None,
+                "is_verified": prop.is_verified,
+                "verification_badge": prop.verification_badge,
+                "views": prop.views or 0,
+                "inquiries": prop.inquiries or 0,
+                "images": prop.images or [],
+                "amenities": prop.amenities or [],
+                "created_at": prop.created_at.isoformat() if prop.created_at else None,
+            })
+
+    return enriched
+
+
 @router.post("/{property_id}")
 async def add_favorite(
     property_id: int,

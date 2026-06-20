@@ -20,8 +20,14 @@ from app.services.verification_service import (
     count_verifications, count_pending_verifications,
     get_pending_verifications, admin_review_verification,
     get_monthly_verification_stats,
+    get_verification_queue, bulk_review_verifications,
+    get_verification_admin_stats,
 )
-from app.services.payment_service import get_total_revenue, get_monthly_revenue_stats
+from app.services.payment_service import (
+    get_total_revenue, get_monthly_revenue_stats,
+    get_revenue_summary, get_revenue_by_purpose, get_revenue_by_method,
+    get_daily_revenue, get_revenue_reconciliation,
+)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -354,19 +360,76 @@ async def refund_payment(
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Mark a payment as refunded."""
+    """Refund a completed payment (Stripe API or M-Pesa manual mark)."""
+    from app.services.payment_service import refund_payment_stripe, refund_payment_mpesa
+    from app.models.payment import Payment, PaymentStatus, PaymentMethod
+
     payment = await get_payment_by_id(db, payment_id)
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
     if payment.status != PaymentStatus.completed:
         raise HTTPException(status_code=400, detail="Only completed payments can be refunded")
 
-    payment.status = PaymentStatus.refunded
-    await db.commit()
-    return {"message": f"Payment #{payment.id} refunded", "payment_id": payment.id}
+    if payment.method == PaymentMethod.stripe:
+        try:
+            result = await refund_payment_stripe(db, payment)
+        except ValueError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+    elif payment.method == PaymentMethod.mpesa:
+        result = await refund_payment_mpesa(db, payment)
+    else:
+        raise HTTPException(status_code=400, detail=f"Cannot refund {payment.method.value} payments")
+
+    return result
 
 
-# ─── Audit Logs ────────────────────────────────────────────────────────────────
+# ─── Revenue Dashboard ─────────────────────────────────────────────────────────
+
+
+@router.get("/revenue/summary")
+async def revenue_summary(
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Total revenue, this month, today, projected monthly, growth rate."""
+    return await get_revenue_summary(db)
+
+
+@router.get("/revenue/by-purpose")
+async def revenue_by_purpose(
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revenue breakdown by payment purpose."""
+    return {"items": await get_revenue_by_purpose(db)}
+
+
+@router.get("/revenue/by-method")
+async def revenue_by_method(
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revenue breakdown by payment method (mpesa, stripe, bank)."""
+    return {"items": await get_revenue_by_method(db)}
+
+
+@router.get("/revenue/daily")
+async def revenue_daily(
+    days: int = Query(30, ge=1, le=365),
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Daily revenue for the last N days with zero-fill for missing days."""
+    return {"items": await get_daily_revenue(db, days=days), "period_days": days}
+
+
+@router.get("/revenue/reconcile")
+async def revenue_reconcile(
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reconcile completed payments sum with expected revenue to detect discrepancies."""
+    return await get_revenue_reconciliation(db)
 
 @router.get("/audit-logs")
 async def list_audit_logs(
@@ -446,6 +509,66 @@ async def list_fraud_reports(
             for r in reports
         ],
     }
+
+
+# ─── Analytics ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/analytics/funnel")
+async def analytics_conversion_funnel(
+    start_date: Optional[str] = Query(None, description="ISO date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="ISO date (YYYY-MM-DD)"),
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Conversion funnel: visitor -> registered -> verified -> made_payment -> subscribed."""
+    from datetime import datetime
+
+    start = datetime.fromisoformat(start_date) if start_date else None
+    end = datetime.fromisoformat(end_date) if end_date else None
+
+    from app.services.analytics_service import get_conversion_funnel
+    funnel = await get_conversion_funnel(db, start_date=start, end_date=end)
+    return {"funnel": funnel}
+
+
+@router.get("/analytics/cohorts")
+async def analytics_retention_cohorts(
+    weeks: int = Query(8, ge=4, le=52),
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Weekly user retention cohorts."""
+    from app.services.analytics_service import get_cohort_retention
+    cohorts = await get_cohort_retention(db, weeks=weeks)
+    return {"cohorts": cohorts}
+
+
+@router.get("/analytics/events")
+async def analytics_event_counts(
+    days: int = Query(30, ge=1, le=365),
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Event type distribution for the last N days."""
+    from datetime import datetime, timedelta, timezone
+    from app.services.analytics_service import get_event_counts_by_type
+
+    start = datetime.now(timezone.utc) - timedelta(days=days)
+    events = await get_event_counts_by_type(db, start_date=start)
+    return {"items": events, "period_days": days}
+
+
+@router.get("/analytics/dau")
+async def analytics_daily_active_users(
+    days: int = Query(30, ge=1, le=90),
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Daily active users for the last N days."""
+    from app.services.analytics_service import get_daily_active_users
+    dau = await get_daily_active_users(db, days=days)
+    return {"dau": dau, "period_days": days}
 
 
 @router.put("/fraud-reports/{report_id}/review")
@@ -577,3 +700,78 @@ async def review_verification(
         "verification_id": verification.id,
         "status": verification.status.value,
     }
+
+
+# ─── Admin Verification Queue & Bulk Ops ────────────────────────────────────────
+
+
+@router.get("/verifications/queue")
+async def admin_verification_queue(
+    status: Optional[str] = Query(None, description="Filter by status: pending, in_progress, flagged, approved, rejected"),
+    city: Optional[str] = Query(None, description="Filter by city name"),
+    risk_level: Optional[str] = Query(None, description="Filter by risk: high, medium, low"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    limit: int = Query(50, ge=1, le=200),
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Admin verification queue sorted by fraud_risk_score DESC (riskiest first).
+    Includes property title, owner name, document count, and AI recommendation.
+    """
+    queue = await get_verification_queue(
+        db=db,
+        status_filter=status,
+        city=city,
+        risk_level=risk_level,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
+    return {
+        "total": len(queue),
+        "items": queue,
+    }
+
+
+@router.post("/verifications/bulk-review")
+async def admin_bulk_review_verifications(
+    reviews: list[dict],
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Batch approve/reject verifications.
+    Body: [{"id": 1, "status": "approved", "notes": "All docs verified"}, ...]
+    Status options: approved, flagged, rejected
+    """
+    results = await bulk_review_verifications(
+        db=db,
+        reviewer_id=admin.id,
+        reviews=reviews,
+    )
+    success_count = sum(1 for r in results if r.get("success"))
+    fail_count = sum(1 for r in results if not r.get("success"))
+    return {
+        "message": f"Processed {len(results)} reviews: {success_count} succeeded, {fail_count} failed",
+        "total": len(results),
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "results": results,
+    }
+
+
+@router.get("/verifications/stats")
+async def admin_verification_stats(
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Verification dashboard stats for admin:
+    - total_pending: pending + in_progress
+    - reviewed_today: approved/flagged/rejected today
+    - average_review_time_hours: avg time from created to review
+    - approval_rate_percent: % of decided that are approved
+    """
+    return await get_verification_admin_stats(db=db)

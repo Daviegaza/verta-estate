@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Card, CardHeader, Badge, StatCard, CardSkeleton, LoadingScreen } from "@/components/ui/card";
+import { Card, CardHeader, Badge, StatCard, LoadingScreen } from "@/components/ui/card";
 
 describe("Card", () => {
   it("renders children", () => {
@@ -15,14 +15,9 @@ describe("Card", () => {
 });
 
 describe("CardHeader", () => {
-  it("renders title", () => {
-    render(<CardHeader title="Test Title" />);
-    expect(screen.getByText("Test Title")).toBeInTheDocument();
-  });
-
-  it("renders subtitle when provided", () => {
-    render(<CardHeader title="Title" subtitle="Subtitle text" />);
-    expect(screen.getByText("Subtitle text")).toBeInTheDocument();
+  it("renders children", () => {
+    render(<CardHeader><span>Header content</span></CardHeader>);
+    expect(screen.getByText("Header content")).toBeInTheDocument();
   });
 });
 

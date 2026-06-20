@@ -50,6 +50,18 @@ async def submit_kyc(
     await db.commit()
     await db.refresh(kyc)
     logger.info('{"event":"kyc_submitted","user_id":%d,"id_type":"%s"}', user_id, id_type)
+
+    # ── Fire analytics event: kyc_submitted ────────────────────────────────
+    from app.services.analytics_service import fire_and_forget_track_user_event
+    import asyncio
+    asyncio.create_task(
+        fire_and_forget_track_user_event(
+            user_id=user_id,
+            event_type="kyc_submitted",
+            event_data={"id_type": id_type},
+        )
+    )
+
     return kyc
 
 
@@ -104,6 +116,19 @@ async def admin_review_kyc(
         '{"event":"kyc_reviewed","kyc_id":%d,"status":"%s","reviewer_id":%d}',
         kyc_id, status.value, reviewer_id,
     )
+
+    # ── Fire analytics event on approval ──────────────────────────────────
+    if status == KYCStatus.approved:
+        from app.services.analytics_service import fire_and_forget_track_user_event
+        import asyncio
+        asyncio.create_task(
+            fire_and_forget_track_user_event(
+                user_id=kyc.user_id,
+                event_type="kyc_approved",
+                event_data={"kyc_id": kyc_id, "id_type": kyc.id_type},
+            )
+        )
+
     return kyc
 
 

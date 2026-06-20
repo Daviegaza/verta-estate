@@ -331,6 +331,23 @@ async def _handle_analytics(event_type: str, user_id: int = 0, data: dict | None
         await track_event(db, event_type, user_id, data or {})
 
 
+@register_handler("lifecycle_notifications")
+async def _handle_lifecycle_notifications(task: str = "all", **kwargs):
+    """Send lifecycle notifications (profile reminders, subscription expiry, etc.)."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.notification_service import send_complete_profile_reminders
+    from app.services.subscription_service import send_subscription_lifecycle_notifications
+
+    async with AsyncSessionLocal() as db:
+        if task in ("all", "profile_reminders"):
+            sent = await send_complete_profile_reminders(db)
+            logger.info('{"event":"lifecycle_profile_reminders","count":%d}', len(sent))
+
+        if task in ("all", "subscription"):
+            sent = await send_subscription_lifecycle_notifications(db)
+            logger.info('{"event":"lifecycle_subscription","count":%d}', len(sent))
+
+
 @register_handler("cleanup")
 async def _handle_cleanup(resource_type: str, **kwargs):
     """Run periodic cleanup jobs."""

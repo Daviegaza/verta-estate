@@ -84,7 +84,7 @@ export default function LoginPage() {
         localStorage.setItem('vestra_show_onboarding', 'true');
         setStep('name');
       } else {
-        router.push(params.get('redirect') || '/market');
+        router.push(params.get('redirect') || '/dashboard');
       }
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Invalid code. Try again.');
@@ -94,7 +94,7 @@ export default function LoginPage() {
   const handleNameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams(window.location.search);
-    router.push(params.get('redirect') || '/market');
+    router.push(params.get('redirect') || '/dashboard');
   };
 
   // ── Email handlers ──

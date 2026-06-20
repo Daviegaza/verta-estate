@@ -1,3 +1,4 @@
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Optional
@@ -8,6 +9,8 @@ from app.models.property import Property
 from app.models.user import User
 from app.services.ai_service import analyze_property_with_ai
 from app.services.property_service import get_property_by_id
+
+logger = logging.getLogger("vestra")
 from app.core.redis import cache_delete
 
 
@@ -44,6 +47,17 @@ async def run_ai_verification(
 
     verification.status = VerificationStatus.in_progress
     await db.commit()
+
+    # ── Fire analytics: verification_requested ────────────────────────────
+    from app.services.analytics_service import fire_and_forget_track_user_event
+
+    asyncio.create_task(
+        fire_and_forget_track_user_event(
+            user_id=verification.user_id,
+            event_type="verification_requested",
+            event_data={"verification_id": verification.id, "property_id": verification.property_id},
+        )
+    )
 
     # Get property details
     prop = await get_property_by_id(db, verification.property_id)
@@ -138,6 +152,21 @@ async def run_ai_verification(
     await cache_delete(f"vestra:prop:{prop.id}")
     await cache_delete("vestra:list:*")
     await cache_delete("vestra:admin:stats")
+
+    # ── Fire analytics: verification_completed ────────────────────────────
+    asyncio.create_task(
+        fire_and_forget_track_user_event(
+            user_id=verification.user_id,
+            event_type="verification_completed",
+            event_data={
+                "verification_id": verification.id,
+                "property_id": verification.property_id,
+                "status": verification.status.value if verification.status else None,
+                "trust_score": float(verification.trust_score or 0),
+                "ai_recommendation": verification.ai_recommendation,
+            },
+        )
+    )
 
     # ── Fire event bus: verification completed ─────────────────────────────
     from app.services.event_bus import emit_event, EVENT_VERIFICATION_COMPLETED
@@ -309,3 +338,284 @@ async def _bg_emit_verification_event(verification, prop) -> None:
             '{"event":"bg_verification_event_failed","verification_id":%d}',
             verification.id,
         )
+
+
+# ── Admin Verification Queue ──────────────────────────────────────────────────
+
+
+async def get_verification_queue(
+    db: AsyncSession,
+    status_filter: Optional[str] = None,
+    city: Optional[str] = None,
+    risk_level: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    limit: int = 50,
+) -> list[dict]:
+    """
+    Returns pending/flagged verifications sorted by fraud_risk_score DESC
+    (riskiest first). Includes property and owner info for admin review queue.
+    """
+    from sqlalchemy.orm import joinedload
+    from app.models.property import Property
+    from app.models.user import User
+
+    query = (
+        select(Verification)
+        .options(joinedload(Verification.user))
+        .options(joinedload(Verification.property))
+        .order_by(Verification.fraud_risk_score.desc().nullslast())
+    )
+
+    # Apply filters
+    if status_filter:
+        try:
+            vs = VerificationStatus(status_filter)
+            query = query.where(Verification.status == vs)
+        except ValueError:
+            pass
+    else:
+        # Default: pending + flagged
+        query = query.where(
+            Verification.status.in_([
+                VerificationStatus.pending,
+                VerificationStatus.in_progress,
+                VerificationStatus.flagged,
+            ])
+        )
+
+    if city:
+        query = query.join(Property).where(Property.city.ilike(f"%{city}%"))
+
+    if risk_level == "high":
+        query = query.where(Verification.fraud_risk_score >= 55.0)
+    elif risk_level == "medium":
+        query = query.where(Verification.fraud_risk_score.between(25.0, 54.99))
+    elif risk_level == "low":
+        query = query.where(
+            (Verification.fraud_risk_score < 25.0) | (Verification.fraud_risk_score.is_(None))
+        )
+
+    if date_from:
+        from datetime import datetime as dt
+        try:
+            parsed = dt.strptime(date_from, "%Y-%m-%d")
+            query = query.where(Verification.created_at >= parsed)
+        except ValueError:
+            pass
+
+    if date_to:
+        from datetime import datetime as dt, timedelta
+        try:
+            parsed = dt.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
+            query = query.where(Verification.created_at < parsed)
+        except ValueError:
+            pass
+
+    result = await db.execute(query.limit(limit))
+    verifications = result.unique().scalars().all()
+
+    queue = []
+    for v in verifications:
+        prop = v.property if hasattr(v, "property") else None
+        owner_name = "N/A"
+        if prop and hasattr(prop, "owner_id") and prop.owner_id:
+            owner_result = await db.execute(
+                select(User).where(User.id == prop.owner_id)
+            )
+            owner = owner_result.scalar_one_or_none()
+            if owner:
+                owner_name = owner.full_name
+
+        doc_count = 0
+        if v.property_id:
+            from app.models.document import Document
+            doc_result = await db.execute(
+                select(func.count(Document.id)).where(
+                    Document.property_id == v.property_id,
+                    Document.is_deleted == False,
+                )
+            )
+            doc_count = doc_result.scalar_one()
+
+        queue.append({
+            "verification_id": v.id,
+            "property_id": v.property_id,
+            "property_title": prop.title if prop else "N/A",
+            "owner_name": owner_name,
+            "fraud_score": v.fraud_risk_score,
+            "trust_score": v.trust_score,
+            "ai_recommendation": v.ai_recommendation,
+            "status": v.status.value if v.status else "unknown",
+            "documents_count": doc_count,
+            "created_at": v.created_at.isoformat() if v.created_at else None,
+        })
+
+    return queue
+
+
+async def bulk_review_verifications(
+    db: AsyncSession,
+    reviewer_id: int,
+    reviews: list[dict],
+) -> list[dict]:
+    """
+    Batch approve/reject verifications.
+    Each review: {"id": int, "status": str, "notes": str}
+    Returns list of results.
+    """
+    from app.services.analytics_service import fire_and_forget_track_verification_outcome
+
+    results = []
+    for review in reviews:
+        vid = review.get("id")
+        status_str = review.get("status", "flagged")
+        notes = review.get("notes", "")
+
+        if not vid:
+            results.append({"id": None, "success": False, "error": "Missing verification id"})
+            continue
+
+        try:
+            vs = VerificationStatus(status_str)
+        except ValueError:
+            results.append({"id": vid, "success": False, "error": f"Invalid status: {status_str}"})
+            continue
+
+        verification = await get_verification_by_id(db, vid)
+        if not verification:
+            results.append({"id": vid, "success": False, "error": "Verification not found"})
+            continue
+
+        verification.status = vs
+        verification.reviewed_by_id = reviewer_id
+        verification.reviewer_notes = notes
+        from datetime import datetime, timezone
+        verification.reviewed_at = datetime.now(timezone.utc)
+
+        if vs == VerificationStatus.approved and verification.property_id:
+            from app.services.property_service import get_property_by_id
+            prop = await get_property_by_id(db, verification.property_id)
+            if prop:
+                prop.is_verified = True
+                prop.trust_score = verification.trust_score or 75
+                prop.verification_badge = _get_badge_level(verification.trust_score or 75)
+                await cache_delete(f"vestra:prop:{prop.id}")
+
+        await db.commit()
+        await db.refresh(verification)
+        await cache_delete("vestra:list:*")
+        await cache_delete("vestra:admin:stats")
+
+        # Track analytics
+        asyncio.create_task(
+            fire_and_forget_track_verification_outcome(
+                verification_id=verification.id,
+                ai_prediction={
+                    "fraud_risk_score": getattr(verification, "fraud_risk_score", None),
+                    "trust_score": getattr(verification, "trust_score", None),
+                    "ai_recommendation": getattr(verification, "ai_recommendation", None),
+                },
+                human_decision=vs.value,
+                ground_truth_notes=notes,
+            )
+        )
+
+        # Emit event
+        from app.services.event_bus import emit_event, EVENT_VERIFICATION_COMPLETED
+        asyncio.create_task(
+            _bg_emit_verification_event(verification, None)
+        )
+
+        results.append({
+            "id": vid,
+            "success": True,
+            "status": vs.value,
+        })
+
+    return results
+
+
+async def get_verification_admin_stats(
+    db: AsyncSession,
+) -> dict:
+    """
+    Returns admin verification dashboard stats:
+    - total_pending: pending + in_progress
+    - reviewed_today: approved/flagged/rejected today
+    - average_review_time: avg hours between created_at and reviewed_at
+    - approval_rate: % of non-pending that are approved
+    """
+    from datetime import datetime, timezone, timedelta
+
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Total pending
+    pending_result = await db.execute(
+        select(func.count(Verification.id)).where(
+            Verification.status.in_([
+                VerificationStatus.pending,
+                VerificationStatus.in_progress,
+            ])
+        )
+    )
+    total_pending = pending_result.scalar_one()
+
+    # Reviewed today
+    reviewed_today_result = await db.execute(
+        select(func.count(Verification.id)).where(
+            Verification.reviewed_at >= today_start,
+            Verification.status.in_([
+                VerificationStatus.approved,
+                VerificationStatus.flagged,
+                VerificationStatus.rejected,
+            ])
+        )
+    )
+    reviewed_today = reviewed_today_result.scalar_one()
+
+    # Average review time (hours) for completed reviews
+    avg_time_result = await db.execute(
+        select(
+            func.avg(
+                func.extract('epoch', Verification.reviewed_at - Verification.created_at) / 3600
+            )
+        ).where(
+            Verification.reviewed_at.isnot(None),
+            Verification.created_at.isnot(None),
+        )
+    )
+    avg_review_time_hours = avg_time_result.scalar_one()
+    avg_review_time = round(avg_review_time_hours, 1) if avg_review_time_hours else 0
+
+    # Approval rate
+    total_decided_result = await db.execute(
+        select(func.count(Verification.id)).where(
+            Verification.status.in_([
+                VerificationStatus.approved,
+                VerificationStatus.flagged,
+                VerificationStatus.rejected,
+            ])
+        )
+    )
+    total_decided = total_decided_result.scalar_one()
+
+    if total_decided > 0:
+        approved_result = await db.execute(
+            select(func.count(Verification.id)).where(
+                Verification.status == VerificationStatus.approved
+            )
+        )
+        approved_count = approved_result.scalar_one()
+        approval_rate = round((approved_count / total_decided) * 100, 1)
+    else:
+        approval_rate = 0.0
+
+    return {
+        "total_pending": total_pending,
+        "reviewed_today": reviewed_today,
+        "average_review_time_hours": avg_review_time,
+        "approval_rate_percent": approval_rate,
+        "total_decided": total_decided,
+    }

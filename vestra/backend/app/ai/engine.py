@@ -114,6 +114,24 @@ class VerificationResult:
 
 
 @dataclass
+class TrustComponent:
+    """A single explainable component of the trust score."""
+    label: str          # Human-readable name, e.g. "Identity Verification"
+    score: float        # 0-100 score for this component
+    weight: float       # Importance weight (0.0-1.0)
+    explanation: str    # One-sentence explanation of the score
+
+
+@dataclass
+class TrustResult:
+    """Structured trust score with component breakdown."""
+    trust_score: float
+    ownership_confidence: str            # low | medium | high
+    recommendation: str                  # approve | review | reject
+    components: list[TrustComponent]     # Labeled component breakdown
+
+
+@dataclass
 class SearchResult:
     city: Optional[str]
     county: Optional[str]
@@ -253,9 +271,20 @@ class FraudDetector:
 
 class TrustEngine:
     """
-    Computes a Trust Score 0-100 from multiple signals.
-    Inverse of fraud, plus positive signals.
+    Computes a Trust Score 0-100 from multiple explainable components.
+    Each component has a label, score (0-100), weight, and explanation.
+    The final trust_score is a weighted composite of all components.
     """
+
+    # Component weights (must sum to 1.0)
+    WEIGHT_IDENTITY = 0.10
+    WEIGHT_DOCUMENT_QUALITY = 0.15
+    WEIGHT_OWNERSHIP = 0.15
+    WEIGHT_AGENT_REPUTATION = 0.10
+    WEIGHT_PRICE_ANOMALY = 0.12
+    WEIGHT_FRAUD_INDICATOR = 0.20
+    WEIGHT_PAYMENT_HISTORY = 0.10
+    WEIGHT_HUMAN_REVIEW = 0.08
 
     def compute(
         self,
@@ -267,32 +296,150 @@ class TrustEngine:
         price_reasonable: bool,
         description_quality: float,   # 0-1
         listing_age_days: int = 0,
-    ) -> tuple[float, str, str]:
-        """Returns (trust_score, ownership_confidence, recommendation)"""
+        payment_history_count: int = 0,
+        title_deed_present: bool = False,
+        human_review_bonus: float = 0.0,
+    ) -> TrustResult:
+        """Returns TrustResult with structured component breakdown."""
 
-        # Base: invert fraud score
-        base = 100 - fraud_score
+        components: list[TrustComponent] = []
 
-        # Bonuses
-        bonus = 0.0
-        if has_required_docs:
-            bonus += 10
-        if doc_count >= 3:
-            bonus += 5
+        # ── 1. Identity Score ─────────────────────────────────────────────
         if agent_verified:
-            bonus += 8
-        if agent_licensed:
-            bonus += 7
+            id_score, id_explanation = 90.0, "Seller/agent identity has been verified on the platform"
+        else:
+            id_score, id_explanation = 25.0, "Seller/agent identity has not been verified — request identity verification"
+        components.append(TrustComponent(
+            label="Identity Verification",
+            score=id_score,
+            weight=self.WEIGHT_IDENTITY,
+            explanation=id_explanation,
+        ))
+
+        # ── 2. Document Quality Score ─────────────────────────────────────
+        # Base from doc count / maximum expected (6 for sale), plus completeness bonus
+        doc_base = min(60.0, (doc_count / 6.0) * 60.0)
+        doc_bonus = 25.0 if has_required_docs else 0.0
+        desc_bonus = 15.0 if description_quality > 0.6 else 0.0
+        dq_score = min(100.0, doc_base + doc_bonus + desc_bonus)
+        if has_required_docs:
+            dq_explanation = "All required documents submitted with good quality descriptions"
+        elif doc_count > 0:
+            dq_explanation = f"Incomplete documentation — {doc_count} of 6 required documents submitted"
+        else:
+            dq_explanation = "No documents submitted — documentation quality cannot be assessed"
+        components.append(TrustComponent(
+            label="Document Quality",
+            score=round(dq_score, 1),
+            weight=self.WEIGHT_DOCUMENT_QUALITY,
+            explanation=dq_explanation,
+        ))
+
+        # ── 3. Ownership Confidence Score ─────────────────────────────────
+        if title_deed_present and agent_verified:
+            oc_score, oc_explanation = 95.0, "Title deed present and seller/agent identity verified — strong ownership chain"
+        elif title_deed_present:
+            oc_score, oc_explanation = 55.0, "Title deed present but seller/agent identity not verified — verify ownership"
+        elif agent_verified:
+            oc_score, oc_explanation = 40.0, "Verified seller/agent but no title deed provided — request title deed"
+        else:
+            oc_score, oc_explanation = 15.0, "No title deed and unverified seller — ownership unconfirmed"
+        components.append(TrustComponent(
+            label="Ownership Confidence",
+            score=oc_score,
+            weight=self.WEIGHT_OWNERSHIP,
+            explanation=oc_explanation,
+        ))
+
+        # ── 4. Agent Reputation Score ────────────────────────────────────
+        if agent_verified and agent_licensed:
+            ar_score, ar_explanation = 90.0, "Licensed agent with verified identity — strong professional credentials"
+        elif agent_verified:
+            ar_score, ar_explanation = 50.0, "Agent identity verified but no EARB license number provided"
+        elif agent_licensed:
+            ar_score, ar_explanation = 40.0, "License provided but agent identity not verified — verify identity"
+        else:
+            ar_score, ar_explanation = 20.0, "Agent not verified and no license number — high professionalism risk"
+        components.append(TrustComponent(
+            label="Agent Reputation",
+            score=ar_score,
+            weight=self.WEIGHT_AGENT_REPUTATION,
+            explanation=ar_explanation,
+        ))
+
+        # ── 5. Price Anomaly Score (inverse — higher = more anomalous) ──
         if price_reasonable:
-            bonus += 5
-        if description_quality > 0.6:
-            bonus += 5
-        if listing_age_days > 30:
-            bonus += 3  # established listing
+            pa_score, pa_explanation = 10.0, "Price is within normal market range for this area"
+        else:
+            pa_score, pa_explanation = 75.0, "Price deviates significantly from typical market range — may indicate risk"
+        components.append(TrustComponent(
+            label="Price Anomaly",
+            score=pa_score,
+            weight=self.WEIGHT_PRICE_ANOMALY,
+            explanation=pa_explanation,
+        ))
 
-        trust = min(100.0, base + bonus)
+        # ── 6. Fraud Indicator Score ─────────────────────────────────────
+        # Maps directly from fraud_score (keyword/pattern detection)
+        components.append(TrustComponent(
+            label="Fraud Indicator",
+            score=fraud_score,
+            weight=self.WEIGHT_FRAUD_INDICATOR,
+            explanation=f"Fraud keyword and pattern analysis returned a score of {fraud_score:.0f}/100",
+        ))
 
-        # Ownership confidence
+        # ── 7. Payment History Score ─────────────────────────────────────
+        if payment_history_count > 5:
+            ph_score = 95.0
+            ph_explanation = f"Strong payment history with {payment_history_count} completed transactions"
+        elif payment_history_count > 2:
+            ph_score = 75.0
+            ph_explanation = f"Moderate payment history with {payment_history_count} transactions"
+        elif payment_history_count > 0:
+            ph_score = 60.0
+            ph_explanation = f"Limited payment history ({payment_history_count} transaction(s))"
+        else:
+            ph_score = 50.0
+            ph_explanation = "No payment history on platform — neutral score assigned"
+        components.append(TrustComponent(
+            label="Payment History",
+            score=ph_score,
+            weight=self.WEIGHT_PAYMENT_HISTORY,
+            explanation=ph_explanation,
+        ))
+
+        # ── 8. Human Review Bonus ────────────────────────────────────────
+        if human_review_bonus > 0:
+            hr_explanation = f"Manual admin review added {human_review_bonus:.0f} trust points"
+        else:
+            hr_explanation = "Pending or no human review adjustment applied"
+        components.append(TrustComponent(
+            label="Human Review Bonus",
+            score=min(100.0, human_review_bonus),
+            weight=self.WEIGHT_HUMAN_REVIEW,
+            explanation=hr_explanation,
+        ))
+
+        # ── Compute weighted composite ──────────────────────────────────
+        # Risk components (price anomaly, fraud indicator) are inverted
+        # so higher original score -> lower trust contribution
+        weight_sum = 0.0
+        weighted_score = 0.0
+        for c in components:
+            w = c.weight
+            weight_sum += w
+            if c.label in ("Price Anomaly", "Fraud Indicator"):
+                # Invert: higher anomaly/fraud = lower trust
+                inverted = 100.0 - c.score
+                weighted_score += inverted * w
+            else:
+                # Direct: higher score = higher trust
+                weighted_score += c.score * w
+
+        trust = round(weighted_score / weight_sum, 1) if weight_sum > 0 else 50.0
+        trust = max(0.0, min(100.0, trust))
+
+        # ── Ownership confidence ─────────────────────────────────────────
         if trust >= 80 and has_required_docs and agent_verified:
             ownership_confidence = "high"
         elif trust >= 55:
@@ -300,7 +447,7 @@ class TrustEngine:
         else:
             ownership_confidence = "low"
 
-        # Recommendation
+        # ── Recommendation ───────────────────────────────────────────────
         if trust >= 75 and fraud_score < 25:
             recommendation = "approve"
         elif trust >= 50 and fraud_score < 50:
@@ -308,7 +455,12 @@ class TrustEngine:
         else:
             recommendation = "reject"
 
-        return round(trust, 1), ownership_confidence, recommendation
+        return TrustResult(
+            trust_score=trust,
+            ownership_confidence=ownership_confidence,
+            recommendation=recommendation,
+            components=components,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -833,6 +985,9 @@ class VestraAI:
         submitted_types = {d.get("type", "") for d in documents}
         has_required = required.issubset(submitted_types) if required else False
 
+        # Check for title deed specifically (for ownership confidence)
+        title_deed_present = "title_deed" in submitted_types
+
         # Price analysis
         price_reasonableness, price_analysis = self._price.analyse(
             price, city, listing_type, bedrooms, size_sqft
@@ -841,8 +996,8 @@ class VestraAI:
         # Description quality score
         desc_quality = min(1.0, len(description) / 300)
 
-        # Trust score
-        trust_score, ownership_confidence, recommendation = self._trust.compute(
+        # Trust score (explainable — returns TrustResult with component breakdown)
+        trust_result = self._trust.compute(
             fraud_score=fraud_score,
             doc_count=len(documents),
             has_required_docs=has_required,
@@ -850,7 +1005,21 @@ class VestraAI:
             agent_licensed=bool(agent_license),
             price_reasonable=(price_reasonableness == "fair"),
             description_quality=desc_quality,
+            title_deed_present=title_deed_present,
         )
+
+        trust_score = trust_result.trust_score
+        ownership_confidence = trust_result.ownership_confidence
+        recommendation = trust_result.recommendation
+        trust_components = [
+            {
+                "label": c.label,
+                "score": c.score,
+                "weight": c.weight,
+                "explanation": c.explanation,
+            }
+            for c in trust_result.components
+        ]
 
         # Market insights
         market_insights = (
@@ -883,6 +1052,7 @@ class VestraAI:
             "ai_summary": summary,
             "price_analysis": price_analysis,
             "action_items": action_items,
+            "trust_components": trust_components,
         }
 
     # ── Search ────────────────────────────────────────────────────────────────

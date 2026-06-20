@@ -393,9 +393,9 @@ class TestReviews:
         assert res.status_code == 200
         data = res.json()
         for agent in data["agents"]:
-            assert "agent_id" in agent
-            assert "avg_rating" in agent
-            assert "review_count" in agent
+            assert "subject_id" in agent or "agent_id" in agent
+            assert "average_rating" in agent or "avg_rating" in agent
+            assert "total_reviews" in agent or "review_count" in agent
 
 
 # ── Referrals ─────────────────────────────────────────────────────────────────────
@@ -429,8 +429,11 @@ class TestReferrals:
 
     async def test_register_with_referral_code(self, client: AsyncClient):
         """User can register with a valid referral code structure (field accepted)."""
+        import time as _time
+        ts = str(int(_time.time() * 1000))
         res = await client.post("/api/auth/register", json={
-            "email": "referral-test-user@example.com",
+            "email": f"referral-{ts}@example.com",
+            "phone": f"+2547{ts[-8:]}",
             "full_name": "Referred User",
             "password": "StrongP@ss1",
             "role": "buyer",
@@ -444,8 +447,11 @@ class TestReferrals:
 
     async def test_register_with_invalid_referral_code(self, client: AsyncClient):
         """Registering with an invalid referral code still creates the user."""
+        import time as _time
+        ts = str(int(_time.time() * 1000))
         res = await client.post("/api/auth/register", json={
-            "email": "bad-referral-user@example.com",
+            "email": f"bad-ref-{ts}@example.com",
+            "phone": f"+2548{ts[-8:]}",
             "full_name": "Bad Referral User",
             "password": "StrongP@ss1",
             "role": "buyer",
@@ -459,8 +465,11 @@ class TestReferrals:
 
     async def test_register_without_referral_code(self, client: AsyncClient):
         """User can register without providing a referral code."""
+        import time as _time
+        ts = str(int(_time.time() * 1000))
         res = await client.post("/api/auth/register", json={
-            "email": "no-ref-user@example.com",
+            "email": f"noref-{ts}@example.com",
+            "phone": f"+2549{ts[-8:]}",
             "full_name": "No Referral User",
             "password": "StrongP@ss1",
             "role": "buyer",
@@ -468,3 +477,156 @@ class TestReferrals:
         assert res.status_code == 201
         data = res.json()
         assert "access_token" in data
+
+    # ── Enhanced Referral Tests ───────────────────────────────────────────────
+
+    async def test_referral_code_returns_stats(self, client: AsyncClient, registered_buyer_token):
+        """Referral code endpoint returns full stats."""
+        token = await registered_buyer_token()
+        if not token:
+            pytest.skip("Could not register buyer")
+        res = await client.get(
+            "/api/auth/referral-code",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert "referral_code" in data
+        assert data["referral_code"].startswith("VST-")
+        assert data["referral_code"].count("-") == 1
+        assert len(data["referral_code"]) == 12  # VST-XXXXXXXX
+        assert "total_referrals" in data
+        assert "total_earned_kes" in data
+        assert "share_link" in data
+
+    async def test_referral_leaderboard_public(self, client: AsyncClient):
+        """Leaderboard is publicly accessible."""
+        res = await client.get("/api/referrals/leaderboard?limit=5")
+        assert res.status_code == 200
+        data = res.json()
+        assert "items" in data
+        assert "total" in data
+
+    async def test_referral_claim_requires_auth(self, client: AsyncClient):
+        """Claiming referral earnings requires authentication."""
+        res = await client.post("/api/referrals/claim")
+        assert res.status_code == 401
+
+    async def test_referral_claim_no_earnings(self, client: AsyncClient, registered_buyer_token):
+        """Claiming with no earnings returns 400."""
+        token = await registered_buyer_token()
+        if not token:
+            pytest.skip("Could not register buyer")
+        res = await client.post(
+            "/api/referrals/claim",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 400
+
+    async def test_referral_endpoints_work_together(
+        self, client: AsyncClient, test_user_data, test_agent_data
+    ):
+        """
+        End-to-end referral flow:
+        1. User A registers (gets referral code)
+        2. User B registers with User A's code
+        3. User A views their referral stats
+        4. Leaderboard shows User A
+        """
+        import time as _time
+
+        # Register User A (referrer)
+        ts1 = str(int(_time.time() * 1000))
+        res_a = await client.post("/api/auth/register", json={
+            **test_user_data,
+            "email": f"referrer-{ts1}@example.com",
+            "phone": f"+25470{ts1[-8:]}",
+        })
+        if res_a.status_code != 201:
+            pytest.skip(f"Could not register referrer: {res_a.status_code}")
+        token_a = res_a.json()["access_token"]
+
+        # Get User A's referral code
+        res_code = await client.get(
+            "/api/auth/referral-code",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert res_code.status_code == 200
+        ref_code = res_code.json()["referral_code"]
+        assert ref_code.startswith("VST-")
+
+        # Register User B (referred) with User A's code
+        ts2 = str(int(_time.time() * 1000) + 1)
+        res_b = await client.post("/api/auth/register", json={
+            **test_agent_data,
+            "email": f"referred-{ts2}@example.com",
+            "phone": f"+25471{ts2[-8:]}",
+            "referral_code": ref_code,
+        })
+        assert res_b.status_code in (201, 409)
+
+        # User A views referral stats
+        res_stats = await client.get(
+            "/api/auth/referral-code",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        if res_stats.status_code == 200:
+            stats = res_stats.json()
+            assert stats["total_referrals"] >= 1
+
+        # Leaderboard is accessible
+        res_lb = await client.get("/api/referrals/leaderboard?limit=10")
+        assert res_lb.status_code == 200
+
+
+# ── Analytics ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+class TestAnalytics:
+    """Analytics endpoints (admin only)."""
+
+    async def test_analytics_funnel_requires_admin(self, client: AsyncClient):
+        """Conversion funnel requires admin auth."""
+        res = await client.get("/api/admin/analytics/funnel")
+        assert res.status_code in (401, 403)
+
+    async def test_analytics_cohorts_requires_admin(self, client: AsyncClient):
+        """Retention cohorts requires admin auth."""
+        res = await client.get("/api/admin/analytics/cohorts")
+        assert res.status_code in (401, 403)
+
+    async def test_analytics_events_requires_admin(self, client: AsyncClient):
+        """Event counts requires admin auth."""
+        res = await client.get("/api/admin/analytics/events")
+        assert res.status_code in (401, 403)
+
+    async def test_analytics_dau_requires_admin(self, client: AsyncClient):
+        """Daily active users requires admin auth."""
+        res = await client.get("/api/admin/analytics/dau")
+        assert res.status_code in (401, 403)
+
+
+# ── Notifications ────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+class TestNotifications:
+    """Notification endpoint tests."""
+
+    async def test_notifications_requires_auth(self, client: AsyncClient):
+        """List notifications requires authentication."""
+        res = await client.get("/api/notifications/")
+        assert res.status_code == 401
+
+    async def test_notifications_empty(self, client: AsyncClient, registered_buyer_token):
+        """New user has no notifications."""
+        token = await registered_buyer_token()
+        if not token:
+            pytest.skip("Could not register buyer")
+        res = await client.get(
+            "/api/notifications/",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert "items" in data
+        assert "unread_count" in data

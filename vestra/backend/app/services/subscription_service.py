@@ -219,6 +219,11 @@ async def create_subscription(
         _bg_emit_subscription_event(sub, "created")
     )
 
+    # ── Fire analytics: subscription_started ──────────────────────────────
+    asyncio.create_task(
+        _bg_track_subscription_analytics(user_id, "subscription_started", tier, float(sub.amount_kes))
+    )
+
     return sub
 
 
@@ -250,6 +255,13 @@ async def upgrade_subscription(
     await cache_delete(f"vestra:sub:{user_id}")
     logger.info('{"event":"subscription_upgraded","user_id":%d,"from":"%s","to":"%s"}',
                 user_id, old_tier, new_tier)
+
+    # ── Fire analytics: subscription_upgraded ─────────────────────────────
+    asyncio.create_task(
+        _bg_track_subscription_analytics(user_id, "subscription_upgraded", new_tier, float(sub.amount_kes),
+                                         extra={"from_tier": old_tier})
+    )
+
     return sub
 
 
@@ -267,6 +279,14 @@ async def cancel_subscription(db: AsyncSession, user_id: int) -> Subscription:
     await db.refresh(sub)
     await cache_delete(f"vestra:sub:{user_id}")
     logger.info('{"event":"subscription_cancelled","user_id":%d}', user_id)
+
+    # ── Fire analytics: subscription_cancelled ────────────────────────────
+    asyncio.create_task(
+        _bg_track_subscription_analytics(user_id, "subscription_cancelled",
+                                         sub.tier.value if sub.tier else "unknown",
+                                         float(sub.amount_kes))
+    )
+
     return sub
 
 
@@ -470,6 +490,166 @@ async def _get_role_from_sub(db: AsyncSession, user_id: int) -> str:
 
 
 # ── Background event helpers ──────────────────────────────────────────────────
+
+
+# ── Lifecycle Notification Triggers ────────────────────────────────────────────
+
+
+async def send_subscription_lifecycle_notifications(db: AsyncSession) -> list[dict]:
+    """
+    Scan all subscriptions and send lifecycle notifications where needed.
+    Call this from a cron/scheduler every hour.
+
+    Notifications sent:
+    - Expiry warning: 3 days before subscription ends
+    - Expired: subscription has ended
+    - Badge expiring: for agents with badges
+    """
+    from app.models.user import User
+    from app.services.notification_service import (
+        send_subscription_expiring_warning,
+        send_subscription_expired,
+        send_agent_badge_expiring_warning,
+    )
+
+    now = datetime.now(timezone.utc)
+    notifications_sent = []
+
+    # ── Find subscriptions expiring in ~3 days ────────────────────────────
+    three_days_from_now = now + timedelta(days=3)
+    week_from_now = now + timedelta(days=7)
+
+    result = await db.execute(
+        select(Subscription).where(
+            Subscription.status == SubscriptionStatus.active,
+            Subscription.current_period_end >= now,
+            Subscription.current_period_end <= three_days_from_now + timedelta(hours=2),
+        )
+    )
+    expiring_subs = result.scalars().all()
+
+    for sub in expiring_subs:
+        days_remaining = (sub.current_period_end - now).days
+        if days_remaining < 0:
+            continue
+        try:
+            await send_subscription_expiring_warning(
+                db=db,
+                user_id=sub.user_id,
+                tier=sub.tier.value if sub.tier else "free",
+                days_remaining=days_remaining,
+                amount_kes=float(sub.amount_kes),
+            )
+            notifications_sent.append({
+                "type": "expiry_warning",
+                "user_id": sub.user_id,
+                "days_remaining": days_remaining,
+            })
+        except Exception:
+            logger.warning(
+                '{"event":"sub_lifecycle_notify_failed","type":"expiry_warning","user_id":%d}',
+                sub.user_id,
+            )
+
+    # ── Find expired subscriptions ────────────────────────────────────────
+    expired_result = await db.execute(
+        select(Subscription).where(
+            Subscription.status == SubscriptionStatus.expired,
+        )
+    )
+    expired_subs = expired_result.scalars().all()
+
+    for sub in expired_subs:
+        try:
+            await send_subscription_expired(
+                db=db,
+                user_id=sub.user_id,
+                tier=sub.tier.value if sub.tier else "free",
+            )
+            notifications_sent.append({
+                "type": "expired",
+                "user_id": sub.user_id,
+            })
+        except Exception:
+            logger.warning(
+                '{"event":"sub_lifecycle_notify_failed","type":"expired","user_id":%d}',
+                sub.user_id,
+            )
+
+    # ── Agent badge expiring warnings ─────────────────────────────────────
+    from app.models.property import AgentProfile
+
+    badge_result = await db.execute(
+        select(AgentProfile, User.id)
+        .join(User, AgentProfile.user_id == User.id)
+        .where(
+            AgentProfile.badge_level.isnot(None),
+            AgentProfile.subscription_expires_at.isnot(None),
+            AgentProfile.subscription_expires_at >= now,
+            AgentProfile.subscription_expires_at <= week_from_now,
+        )
+    )
+    badge_rows = badge_result.all()
+
+    for profile_row, uid in badge_rows:
+        days_remaining = (profile_row.subscription_expires_at - now).days
+        if days_remaining < 0:
+            continue
+        try:
+            await send_agent_badge_expiring_warning(
+                db=db,
+                user_id=uid,
+                badge_level=profile_row.badge_level or "",
+                days_remaining=days_remaining,
+            )
+            notifications_sent.append({
+                "type": "badge_expiry_warning",
+                "user_id": uid,
+                "days_remaining": days_remaining,
+                "badge_level": profile_row.badge_level,
+            })
+        except Exception:
+            logger.warning(
+                '{"event":"sub_lifecycle_notify_failed","type":"badge_warning","user_id":%d}',
+                uid,
+            )
+
+    if notifications_sent:
+        logger.info(
+            '{"event":"sub_lifecycle_notifications_sent","count":%d}',
+            len(notifications_sent),
+        )
+
+    return notifications_sent
+
+
+async def _bg_track_subscription_analytics(
+    user_id: int,
+    event_type: str,
+    tier: str,
+    amount_kes: float,
+    extra: Optional[dict] = None,
+) -> None:
+    """Fire-and-forget: track subscription analytics event."""
+    from app.services.analytics_service import fire_and_forget_track_user_event
+
+    try:
+        data = {
+            "tier": tier,
+            "amount_kes": amount_kes,
+        }
+        if extra:
+            data.update(extra)
+        await fire_and_forget_track_user_event(
+            user_id=user_id,
+            event_type=event_type,
+            event_data=data,
+        )
+    except Exception:
+        logger.warning(
+            '{"event":"bg_subscription_analytics_failed","user_id":%d,"event_type":"%s"}',
+            user_id, event_type,
+        )
 
 
 async def _bg_emit_subscription_event(sub, action: str) -> None:

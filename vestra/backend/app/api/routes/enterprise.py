@@ -1,20 +1,66 @@
 """
-Enterprise API routes — API key management, webhooks, usage analytics.
+Enterprise API routes — API key management, webhooks, usage analytics, metrics.
 For B2B clients: banks, SACCOs, insurers paying KES 25K-150K/month.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.services.api_key_service import (
     create_api_key, get_user_keys, revoke_api_key, get_api_key_usage,
+    validate_api_key, record_api_key_usage,
 )
 from app.services.webhook_service import (
     register_webhook, get_user_webhooks, delete_webhook,
 )
 
 router = APIRouter(prefix="/enterprise", tags=["Enterprise API"])
+
+
+# ── API Key Validation & Tracking Dependency ───────────────────────────────────
+
+
+async def resolve_api_key(
+    request: Request,
+    x_api_key: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Dependency: validates an API key from the X-API-Key header.
+    Tracks usage and enforces rate limits per key.
+    Raises 401 if the key is missing, invalid, or expired.
+    Raises 429 if the key's rate limit is exceeded.
+    """
+    if not x_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "api_key_required", "message": "Provide an API key via the X-API-Key header."},
+        )
+
+    key = await validate_api_key(db, x_api_key)
+    if not key:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "invalid_api_key", "message": "Invalid or expired API key."},
+        )
+
+    # Record usage
+    await record_api_key_usage(db, key.id, endpoint=request.url.path, response_status=200, response_time_ms=0.0)
+
+    # Enforce rate limits
+    from app.core.redis import RedisRateLimiter
+    limiter = RedisRateLimiter(max_requests=key.rate_limit_per_min, window_seconds=60)
+    allowed = await limiter.is_allowed(f"api_key:{key.id}")
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "rate_limit_exceeded", "message": f"Max {key.rate_limit_per_min} req/min exceeded."},
+        )
+
+    request.state.api_key = key
+    return key
 
 
 # ── API Keys ─────────────────────────────────────────────────────────────────
@@ -97,6 +143,34 @@ async def api_usage(
 ):
     """Get API key usage analytics."""
     return await get_api_key_usage(db, current_user.id, days)
+
+
+# ── Metrics ──────────────────────────────────────────────────────────────────
+
+
+@router.get("/metrics")
+async def enterprise_metrics(
+    days: int = Query(30, ge=1, le=90),
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Enterprise API usage metrics per key with total request counts."""
+    result = await get_api_key_usage(db, current_user.id, days)
+
+    # Enrich with total request counts per key
+    for key_data in result.get("keys", []):
+        daily = key_data.get("daily_usage", {})
+        key_data["total_requests"] = sum(
+            int(v) for v in daily.values() if isinstance(v, (int, float))
+        )
+        key_data["average_daily"] = round(
+            key_data["total_requests"] / max(len(daily), 1), 1
+        )
+
+    result["total_requests"] = sum(
+        k.get("total_requests", 0) for k in result.get("keys", [])
+    )
+    return result
 
 
 # ── Webhooks ────────────────────────────────────────────────────────────────

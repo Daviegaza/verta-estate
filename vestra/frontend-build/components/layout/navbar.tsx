@@ -31,14 +31,16 @@ export default function Navbar() {
     router.push('/');
   };
 
-  const isBuyer = user?.role === 'buyer';
-  const hasDashboard = user?.role && !['buyer', 'admin', 'super_admin'].includes(user.role);
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const isAuthenticatedUser = !!user;
 
   const navLinks = [
     { href: '/market', label: 'Properties', icon: <Home className="w-4 h-4" /> },
     { href: '/verify', label: 'Verify', icon: <ShieldCheck className="w-4 h-4" /> },
-    ...(hasDashboard ? [{ href: '/dashboard', label: 'Dashboard', icon: <BarChart2 className="w-4 h-4" /> }] : []),
+    // Always show Dashboard for authenticated users — the smart router handles role routing
+    ...(isAuthenticatedUser
+      ? [{ href: isAdmin ? '/admin' : '/dashboard', label: 'Dashboard', icon: <BarChart2 className="w-4 h-4" /> }]
+      : []),
   ];
 
   return (
@@ -120,9 +122,9 @@ export default function Navbar() {
                         My Account
                       </Link>
 
-                      {hasDashboard && (
+                      {isAuthenticatedUser && (
                         <Link
-                          href="/dashboard"
+                          href={isAdmin ? '/admin' : '/dashboard'}
                           className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                           onClick={() => setUserMenuOpen(false)}
                         >

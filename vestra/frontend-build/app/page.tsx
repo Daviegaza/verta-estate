@@ -5,9 +5,11 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/layout/navbar';
 import { Button } from '@/components/ui/button';
+import { useRecentlyViewed } from '@/hooks/useRecentlyViewed';
 import {
   ShieldCheck, Search, TrendingUp, Users, CheckCircle,
-  ArrowRight, Star, MapPin, Zap, Building2, Lock, Smartphone
+  ArrowRight, Star, MapPin, Zap, Building2, Lock, Smartphone,
+  Clock, Eye, X, ChevronRight
 } from 'lucide-react';
 
 const STATS = [
@@ -79,6 +81,7 @@ const POPULAR_SEARCHES = [
 
 export default function HomePage() {
   const router = useRouter();
+  const { items: recentViews, hydrated: rvHydrated, clearAll: clearRecent, removeItem: removeRecent } = useRecentlyViewed();
   const [aiQuery, setAiQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
 
@@ -231,6 +234,65 @@ export default function HomePage() {
           })}
         </div>
       </section>
+
+      {/* Recently Viewed — keeps users coming back */}
+      {rvHydrated && recentViews.length > 0 && (
+        <section className="bg-gray-50 py-16">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2.5">
+                <Clock className="w-5 h-5 text-gray-500" />
+                <h2 className="text-2xl font-bold text-gray-900">Recently Viewed</h2>
+                <span className="text-sm text-gray-400">— pick up where you left off</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link href="/market">
+                  <Button variant="ghost" size="sm" className="text-gray-500">Browse All</Button>
+                </Link>
+                <button
+                  onClick={clearRecent}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                  title="Clear history"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {recentViews.slice(0, 4).map((item) => (
+                <Link
+                  key={item.id}
+                  href={`/properties/${item.id}`}
+                  className="group bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 relative"
+                >
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeRecent(item.id); }}
+                    className="absolute top-2 right-2 p-1 rounded-lg text-gray-300 hover:text-gray-500 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    title="Remove"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Eye className="w-3.5 h-3.5 text-gray-400" />
+                    <span className="text-xs text-gray-400">
+                      {Math.round((Date.now() - item.viewedAt) / 60000)}m ago
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 mb-2 group-hover:text-emerald-700 transition-colors">
+                    {item.title}
+                  </h3>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">{item.city}</span>
+                    <span className="text-sm font-bold text-gray-900">
+                      {item.currency === 'KES' ? 'KES ' : ''}{item.price.toLocaleString()}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* How it works */}
       <section className="bg-gray-50 py-24">

@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { cn, formatCurrency, getListingTypeLabel, getPropertyTypeLabel, getBadgeColor } from '@/lib/utils';
-import type { Property } from '@/types';
+import type { Property, VestimaEstimate } from '@/types';
+import VestimaMini from '@/components/property/VestimaMini';
 import {
   ShieldCheck, BedDouble, Bath, Maximize, MapPin, Eye,
   Heart, Sparkles, TrendingUp, Clock
@@ -259,6 +260,16 @@ function PropertyCard({ property, className, isFavorited = false }: PropertyCard
                   {(property as any).ai_price_tip}
                 </span>
               )}
+            </div>
+          )}
+
+          {/* Vestima Mini (when estimate data is available) */}
+          {(property as any).vestima_estimate && (
+            <div className="mt-2">
+              <VestimaMini
+                estimate={(property as any).vestima_estimate as VestimaEstimate}
+                submittedPrice={property.price}
+              />
             </div>
           )}
 

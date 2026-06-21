@@ -1,0 +1,74 @@
+# VESTRA — Top-Level .dockerignore
+# Excludes files/directories that should never enter a Docker build context.
+# Each subproject (backend/, frontend-build/) also has its own .dockerignore
+# for build-specific exclusions.
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# IDE & editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS cruft
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Node.js
+node_modules/
+frontend-build/node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+.venv/
+backend/venv/
+backend/.venv/
+
+# Next.js build
+.next/
+out/
+frontend-build/.next/
+frontend-build/out/
+
+# Test artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage/
+htmlcov/
+.tox/
+frontend-build/coverage/
+frontend-build/playwright-report/
+frontend-build/test-results/
+
+# Logs
+*.log
+logs/
+
+# Docker files
+docker-compose*.yml
+Dockerfile
+
+# Documentation (already in repo, not needed at runtime)
+README.md
+
+# Uploads (mounted as volume at runtime)
+uploads/
+backend/uploads/

@@ -20,12 +20,13 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.20.0",
     "next": "16.2.9",
+    "next-intl": "^4.13.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.6.0",
-    "zxcvbn": "^4.4.2",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.14",
+    "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

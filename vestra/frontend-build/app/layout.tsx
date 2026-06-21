@@ -1,12 +1,5 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
-import { ToastProvider } from '@/components/ui/toaster';
-import AuthInit from '@/components/layout/AuthInit';
-import ErrorBoundary from '@/components/layout/ErrorBoundary';
-import OnboardingWrapper from '@/components/layout/OnboardingWrapper';
-import PWAInstallPrompt from '@/components/layout/PWAInstallPrompt';
-import ServiceWorkerRegister from '@/components/layout/ServiceWorkerRegister';
-import { ThemeProvider } from '@/components/layout/ThemeProvider';
 
 export const metadata: Metadata = {
   title: 'Vestra — AI-Powered Property Trust Platform | Kenya',
@@ -58,41 +51,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning className="light" style={{ colorScheme: 'light' }}>
       <head>
-        {/* DNS prefetch & preconnect for faster API calls */}
         <link rel="dns-prefetch" href="//localhost" />
         <link rel="preconnect" href="//localhost" crossOrigin="anonymous" />
-        {/* Apple touch icon */}
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512x512.png" />
-        {/* Favicon */}
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-72x72.png" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
-        {/* Safari pinned tab */}
         <link rel="mask-icon" href="/icons/icon-512x512.png" color="#10b981" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Vestra" />
-        {/* Microsoft tiles */}
         <meta name="msapplication-TileColor" content="#10b981" />
         <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
-        {/* Theme color */}
         <meta name="theme-color" content="#10b981" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#111827" media="(prefers-color-scheme: dark)" />
       </head>
       <body style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-        <ErrorBoundary>
-          <ThemeProvider>
-            <AuthInit>
-              <ToastProvider>
-                <OnboardingWrapper>
-                  {children}
-                </OnboardingWrapper>
-                <PWAInstallPrompt />
-                <ServiceWorkerRegister />
-              </ToastProvider>
-            </AuthInit>
-          </ThemeProvider>
-        </ErrorBoundary>
+        {children}
       </body>
     </html>
   );

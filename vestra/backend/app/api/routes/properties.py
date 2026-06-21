@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -19,6 +20,8 @@ from app.services.subscription_service import get_user_subscription
 from app.services.analytics_service import fire_and_forget_track_search, fire_and_forget_track_user_event
 from app.models.user import UserRole
 from app.models.property import PropertyType, ListingType, PropertyStatus
+
+logger = logging.getLogger("vestra.properties")
 
 router = APIRouter(prefix="/properties", tags=["Properties"])
 
@@ -179,6 +182,16 @@ async def get_property(
         result = _prop_to_dict(prop)
         # Only increment views on fresh DB reads (not cached)
         await increment_property_views(db, property_id)
+
+    # ── Vestima AI price estimate (1-hour cache) ──────────────────────────
+    try:
+        from app.services.vestima_service import get_cached_vestima_for_property_dict
+        vestima = await get_cached_vestima_for_property_dict(db, property_id, result)
+        if vestima:
+            result["vestima_estimate"] = vestima
+    except Exception:
+        logger.warning('{"event":"vestima_estimate_failed","property_id":%d}', property_id)
+
     return result
 
 

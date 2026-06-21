@@ -116,6 +116,66 @@ async def property_insights_endpoint(
     return result
 
 
+# ── Vestima Price Estimator ─────────────────────────────────────────────────
+
+@router.get("/vestima/{property_id}")
+async def vestima_estimate(
+    property_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Full Vestima price estimate for a listed property.
+    Returns estimated value, confidence range, comparables, price per sq ft, and market trend.
+    Cached for 1 hour behind the scenes.
+    """
+    from app.services.vestima_service import get_cached_vestima_estimate
+    from fastapi import HTTPException
+
+    result = await get_cached_vestima_estimate(db, property_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Property not found")
+    return {"property_id": property_id, "vestima": result}
+
+
+@router.post("/vestima/custom")
+async def vestima_custom_estimate(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Vestima price estimate for any custom property data — no listing required.
+    Accepts: city, property_type, listing_type, bedrooms, size_sqft, year_built, amenities, price
+    """
+    from app.services.vestima_service import estimate_property
+
+    result = await estimate_property(db, data)
+    return {"vestima": result}
+
+
+@router.get("/vestima/history/{property_id}")
+async def vestima_estimate_history(
+    property_id: int,
+    limit: int = Query(5, ge=1, le=24),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Historical Vestima estimates for a property.
+    Shows how the AI's valuation has trended over time.
+    """
+    from app.services.vestima_service import get_vestima_history
+    from fastapi import HTTPException
+
+    result = await get_vestima_history(db, property_id, limit=limit)
+    if not result:
+        raise HTTPException(status_code=404, detail="Property not found")
+    return {"property_id": property_id, "history": result}
+
+
+# ── Suggestions ──────────────────────────────────────────────────────────────
+
 @router.get("/suggestions")
 async def search_suggestions(
     q: str = Query(..., description="Partial search query for autocomplete"),

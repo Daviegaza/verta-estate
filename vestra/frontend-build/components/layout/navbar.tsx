@@ -2,19 +2,23 @@
 
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import {
   Home, ShieldCheck, BarChart2,
   User, Menu, X, LogOut, ChevronDown, Sun, Moon, Bell
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
+import LanguageSwitcher from './LanguageSwitcher';
 
 export default function Navbar() {
   const router = useRouter();
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  // Strip locale prefix for active link matching (e.g. /en/market -> /market)
+  const pathname = rawPathname.replace(/^\/(en|sw)(\/|$)/, '/');
   const { user, isAuthenticated, logout } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -26,6 +30,8 @@ export default function Navbar() {
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  const { subscribe } = useWebSocket();
 
   // Escape key closes menus
   useEffect(() => {
@@ -39,11 +45,13 @@ export default function Navbar() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // Fetch notification count for authenticated users
+  // Fetch notification count — initial HTTP fetch + real-time WebSocket updates
   useEffect(() => {
     if (!isAuthenticated) return;
     const token = localStorage.getItem('vestra_token');
     if (!token) return;
+
+    // Initial HTTP fetch for current count
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/notifications?unread_only=true&limit=1`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -54,7 +62,13 @@ export default function Navbar() {
         }
       })
       .catch(() => {});
-  }, [isAuthenticated]);
+
+    // Real-time updates via WebSocket
+    const unsub = subscribe('notification', (payload) => {
+      setNotifCount((prev) => prev + 1);
+    });
+    return () => unsub();
+  }, [isAuthenticated, subscribe]);
 
   const handleLogout = () => {
     logout();
@@ -105,7 +119,7 @@ export default function Navbar() {
           </div>
 
           {/* Right Side */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             {/* Notification Bell */}
             {isAuthenticated && (
               <Link
@@ -121,6 +135,8 @@ export default function Navbar() {
                 )}
               </Link>
             )}
+            {/* Language Switcher */}
+            <LanguageSwitcher />
             {/* Theme Toggle */}
             <button
               onClick={() => setTheme(resolved === 'dark' ? 'light' : 'dark')}

@@ -1,9 +1,13 @@
 import uuid
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Optional
 from app.models.payment import Payment, PaymentStatus, PaymentMethod, PaymentPurpose
 from app.services.mpesa_service import initiate_stk_push, parse_mpesa_callback
+
+logger = logging.getLogger("vestra")
+
 from app.core.config import settings
 
 
@@ -122,6 +126,34 @@ async def handle_mpesa_callback(db: AsyncSession, callback_data: dict) -> Option
         )
     )
 
+    # ── Push to WebSocket ─────────────────────────────────────────────────
+    try:
+        from app.core.websocket import manager as ws_manager
+
+        await ws_manager.broadcast_to_user(
+            payment.user_id,
+            {
+                "type": "payment_status",
+                "payload": {
+                    "payment_id": payment.id,
+                    "status": payment.status.value,
+                    "amount": float(payment.amount),
+                    "purpose": payment.purpose.value if payment.purpose else None,
+                    "mpesa_receipt": payment.mpesa_receipt_number,
+                    "reference": payment.reference,
+                    "created_at": (
+                        payment.created_at.isoformat() if payment.created_at else None
+                    ),
+                },
+            },
+        )
+    except Exception:
+        logger.debug(
+            '{"event":"ws_push_failed","payment_id":%d,"user_id":%d}',
+            payment.id,
+            payment.user_id,
+        )
+
     return payment
 
 
@@ -221,6 +253,29 @@ async def process_stripe_payment_intent(
             payment.error_message = last_error.get("message", "Stripe payment failed")
         await db.commit()
         await db.refresh(payment)
+
+        # ── Push to WebSocket ─────────────────────────────────────────
+        try:
+            from app.core.websocket import manager as ws_manager
+            await ws_manager.broadcast_to_user(
+                payment.user_id,
+                {
+                    "type": "payment_status",
+                    "payload": {
+                        "payment_id": payment.id,
+                        "status": payment.status.value,
+                        "amount": float(payment.amount),
+                        "purpose": payment.purpose.value if payment.purpose else None,
+                        "reference": payment.reference,
+                        "created_at": (
+                            payment.created_at.isoformat() if payment.created_at else None
+                        ),
+                    },
+                },
+            )
+        except Exception:
+            logger.debug('{"event":"ws_push_failed","payment_id":%d}', payment.id)
+
         return payment
 
     # Create new payment record
@@ -256,6 +311,29 @@ async def process_stripe_payment_intent(
         '{"event":"stripe_payment_created","payment_id":%d,"pi":"%s","amount":%f,"currency":"%s"}',
         payment.id, pi_id, amount, currency,
     )
+
+    # ── Push to WebSocket ─────────────────────────────────────────────────
+    try:
+        from app.core.websocket import manager as ws_manager
+        await ws_manager.broadcast_to_user(
+            payment.user_id,
+            {
+                "type": "payment_status",
+                "payload": {
+                    "payment_id": payment.id,
+                    "status": payment.status.value,
+                    "amount": float(payment.amount),
+                    "purpose": payment.purpose.value if payment.purpose else None,
+                    "reference": payment.reference,
+                    "created_at": (
+                        payment.created_at.isoformat() if payment.created_at else None
+                    ),
+                },
+            },
+        )
+    except Exception:
+        logger.debug('{"event":"ws_push_failed","payment_id":%d}', payment.id)
+
     return payment
 
 

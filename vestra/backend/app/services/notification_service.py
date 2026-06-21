@@ -25,7 +25,7 @@ async def create_notification(
     data: Optional[dict] = None,
     channel: str = "in_app",
 ) -> Notification:
-    """Create an in-app notification."""
+    """Create an in-app notification and push it via WebSocket."""
     notification = Notification(
         user_id=user_id,
         type=type,
@@ -37,6 +37,37 @@ async def create_notification(
     db.add(notification)
     await db.commit()
     await db.refresh(notification)
+
+    # ── Push to WebSocket ───────────────────────────────────────────────────
+    try:
+        from app.core.websocket import manager as ws_manager
+
+        await ws_manager.broadcast_to_user(
+            user_id,
+            {
+                "type": "notification",
+                "payload": {
+                    "id": notification.id,
+                    "type": notification.type,
+                    "title": notification.title,
+                    "body": notification.body,
+                    "data": notification.data,
+                    "is_read": notification.is_read,
+                    "created_at": (
+                        notification.created_at.isoformat()
+                        if notification.created_at
+                        else None
+                    ),
+                },
+            },
+        )
+    except Exception:
+        logger.debug(
+            '{"event":"ws_push_failed","notification_id":%d,"user_id":%d}',
+            notification.id,
+            user_id,
+        )
+
     return notification
 
 

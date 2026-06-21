@@ -21,7 +21,7 @@ async def send_message(
     property_id: Optional[int] = None,
     subject: Optional[str] = None,
 ) -> Message:
-    """Send a message from one user to another."""
+    """Send a message from one user to another and push it via WebSocket."""
     message = Message(
         sender_id=sender_id,
         receiver_id=receiver_id,
@@ -32,6 +32,37 @@ async def send_message(
     db.add(message)
     await db.commit()
     await db.refresh(message)
+
+    # ── Push to WebSocket (receiver gets instant delivery) ──────────────────
+    try:
+        from app.core.websocket import manager as ws_manager
+
+        payload = {
+            "id": message.id,
+            "sender_id": message.sender_id,
+            "receiver_id": message.receiver_id,
+            "body": message.body,
+            "property_id": message.property_id,
+            "subject": message.subject,
+            "is_read": message.is_read,
+            "created_at": (
+                message.created_at.isoformat() if message.created_at else None
+            ),
+        }
+        await ws_manager.broadcast_to_user(
+            receiver_id, {"type": "message", "payload": payload}
+        )
+        # Also push to sender so their open conversation window updates
+        await ws_manager.broadcast_to_user(
+            sender_id, {"type": "message", "payload": payload}
+        )
+    except Exception:
+        logger.debug(
+            '{"event":"ws_push_failed","message_id":%d,"receiver_id":%d}',
+            message.id,
+            receiver_id,
+        )
+
     return message
 
 

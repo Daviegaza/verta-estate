@@ -382,3 +382,39 @@ export interface Message {
   is_read: boolean;
   created_at: string;
 }
+
+// Vestima Price Estimator types
+export interface VestimaComparable {
+  title: string;
+  price: number;
+  size_sqft: number | null;
+  price_per_sqft: number;
+  bedrooms: number | null;
+  location: string;
+  distance_km: number | null;
+  relevance_score: number;
+  is_verified: boolean;
+}
+
+export interface VestimaEstimate {
+  estimated_value: number;
+  low_estimate: number;
+  high_estimate: number;
+  confidence_score: number;
+  confidence_label: 'high' | 'medium' | 'low';
+  comparables: VestimaComparable[];
+  price_per_sqft: number | null;
+  market_trend: 'appreciating' | 'stable' | 'declining';
+  market_status: string;
+  valuation_summary: string;
+  as_of: string;
+}
+
+export interface VestimaHistoryEntry {
+  estimated_value: number;
+  low_estimate: number;
+  high_estimate: number;
+  confidence_score: number;
+  as_of: string;
+  months_ago: number;
+}

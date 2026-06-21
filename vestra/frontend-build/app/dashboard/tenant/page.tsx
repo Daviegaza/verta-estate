@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import AuthGuard from '@/components/layout/AuthGuard';
 import RoleBanner from '@/components/dashboard/RoleBanner';
@@ -9,6 +9,7 @@ import QuickActions, { type QuickAction } from '@/components/dashboard/QuickActi
 import { Card, Badge, Spinner } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/authStore';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import api from '@/lib/api';
 import {
   Home, CreditCard, Calendar, Wrench, Phone,
@@ -39,60 +40,56 @@ export default function TenantDashboardPage() {
 
 function TenantContent() {
   const { user } = useAuthStore();
+  const { subscribe } = useWebSocket();
   const [rental, setRental] = useState<TenantRental | null>(null);
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [paying, setPaying] = useState(false);
   const [paymentSent, setPaymentSent] = useState(false);
-  const [checkingPayment, setCheckingPayment] = useState(false);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [paymentTimeout, setPaymentTimeout] = useState(false);
   const [lastReceipt, setLastReceipt] = useState<any>(null);
-  const pollCount = useRef(0);
 
   useEffect(() => { loadData(); }, []);
 
-  // ── Auto-poll for payment confirmation (max 20 attempts = 60 seconds) ──
+  // ── Real-time payment confirmation via WebSocket (replaces polling) ──────
   useEffect(() => {
-    if (!paymentSent || paymentConfirmed) return;
-    pollCount.current = 0;
-    setPaymentTimeout(false);
-    const interval = setInterval(async () => {
-      pollCount.current += 1;
-      if (pollCount.current > 20) {
-        clearInterval(interval);
+    if (!paymentSent) return;
+
+    // Timeout safety net: if WS fails, fall back after 60s
+    const timeoutId = setTimeout(() => {
+      setPaymentSent(false);
+      setPaymentTimeout(true);
+    }, 60000);
+
+    const unsub = subscribe('payment_status', (payload) => {
+      // Only handle rent payments we just initiated
+      if (payload.status === 'completed' && (payload.purpose === 'rent')) {
+        setPaymentConfirmed(true);
+        setPaymentSent(false);
+        setPaymentTimeout(false);
+        setLastReceipt({
+          id: payload.payment_id,
+          receipt_number: `RCP-${String(payload.payment_id).padStart(6, '0')}`,
+          amount: payload.amount,
+          date: payload.created_at,
+          mpesa_ref: payload.mpesa_receipt || '',
+        });
+        loadData(); // Refresh all data
+        clearTimeout(timeoutId);
+      } else if (payload.status === 'failed') {
         setPaymentSent(false);
         setPaymentTimeout(true);
-        return;
+        clearTimeout(timeoutId);
       }
-      setCheckingPayment(true);
-      try {
-        const res = await api.client.get('/api/payments/my');
-        const allPayments = res.data || [];
-        const recentRent = allPayments.find((p: any) =>
-          (p.purpose === 'rent' || (p.description || '').toLowerCase().includes('rent')) &&
-          p.status === 'completed' &&
-          new Date(p.created_at).getTime() > Date.now() - 60000 // last 1 minute
-        );
-        if (recentRent) {
-          setPaymentConfirmed(true);
-          setPaymentSent(false);
-          setLastReceipt({
-            id: recentRent.id,
-            receipt_number: `RCP-${String(recentRent.id).padStart(6, '0')}`,
-            amount: recentRent.amount,
-            date: recentRent.created_at,
-            mpesa_ref: recentRent.mpesa_receipt_number || '',
-          });
-          loadData(); // Refresh all data
-        }
-      } catch {} finally {
-        setCheckingPayment(false);
-      }
-    }, 3000); // Check every 3 seconds
-    return () => clearInterval(interval);
-  }, [paymentSent, paymentConfirmed]);
+    });
+
+    return () => {
+      clearTimeout(timeoutId);
+      unsub();
+    };
+  }, [paymentSent, subscribe]);
 
   const loadData = async () => {
     setLoading(true); setError('');
@@ -255,12 +252,10 @@ function TenantContent() {
           <h3 className="text-lg font-bold text-amber-800 mb-2">Check Your Phone 📱</h3>
           <p className="text-amber-700 mb-1">M-Pesa STK Push sent to <strong>{user?.phone}</strong></p>
           <p className="text-amber-600 text-sm">Enter your M-Pesa PIN to complete payment. This page will auto-update.</p>
-          {checkingPayment && (
-            <div className="flex items-center justify-center gap-2 mt-4 text-amber-500">
-              <Spinner size="sm" />
-              <span className="text-sm">Waiting for payment confirmation...</span>
-            </div>
-          )}
+          <div className="flex items-center justify-center gap-2 mt-4 text-amber-500">
+            <Spinner size="sm" />
+            <span className="text-sm">Waiting for payment confirmation...</span>
+          </div>
         </div>
       )}
 

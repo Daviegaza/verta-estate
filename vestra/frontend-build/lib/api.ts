@@ -428,6 +428,29 @@ class VestraAPIClient {
     });
   }
 
+  async getVestimaEstimate(propertyId: number): Promise<{ property_id: number; vestima: import('@/types').VestimaEstimate }> {
+    return withRetry(async () => {
+      const res = await this.client.get(`/api/ai/vestima/${propertyId}`);
+      return res.data;
+    });
+  }
+
+  async getVestimaCustomEstimate(data: Record<string, any>): Promise<{ vestima: import('@/types').VestimaEstimate }> {
+    return withRetry(async () => {
+      const res = await this.client.post('/api/ai/vestima/custom', data);
+      return res.data;
+    });
+  }
+
+  async getVestimaHistory(propertyId: number, limit = 5): Promise<{ property_id: number; history: import('@/types').VestimaHistoryEntry[] }> {
+    return withRetry(async () => {
+      const res = await this.client.get(`/api/ai/vestima/history/${propertyId}`, {
+        params: { limit },
+      });
+      return res.data;
+    });
+  }
+
   // ─── Admin ─────────────────────────────────────────────────────────────────
 
   async getAdminStats(): Promise<AdminStats> {

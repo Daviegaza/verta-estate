@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 
 import sentry_sdk
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -55,6 +55,7 @@ from app.core.middleware import (
 )
 from app.core.csrf import CSRFMiddleware
 from app.core.indexes import create_performance_indexes
+from app.core.websocket import handle_ws
 from app.api import api_router, legacy_router
 
 logger = logging.getLogger("vestra")
@@ -240,6 +241,13 @@ app.include_router(legacy_router)
 
 # Prometheus metrics endpoint (secured in production via reverse proxy)
 app.add_route("/metrics", metrics_endpoint, methods=["GET"])
+
+# ── WebSocket ──────────────────────────────────────────────────────────────────
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await handle_ws(websocket)
+
 
 # ── Static Files ───────────────────────────────────────────────────────────────
 

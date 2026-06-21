@@ -22,6 +22,7 @@ version: '3.9'
 #   - node-exporter : Host metrics (port 9100)
 #   - redis-exporter: Redis metrics (port 9121)
 #   - postgres-exporter: PostgreSQL metrics (port 9187)
+#   - worker        : Background task processor
 #   - flower        : Celery task monitor (port 5555)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -86,6 +87,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     deploy:
       resources:
         limits:
@@ -140,6 +142,12 @@ services:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     deploy:
       resources:
         limits:
@@ -169,6 +177,18 @@ services:
       - "127.0.0.1:3000:3000"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000',r=>process.exit(r.statusCode===200?0:1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
     networks:
       - vestra_internal
     logging:
@@ -194,6 +214,18 @@ services:
       - frontend
       - backend
       - grafana
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
     networks:
       - vestra_internal
     logging:
@@ -228,6 +260,18 @@ services:
       - node-exporter
       - redis-exporter
       - postgres-exporter
+    healthcheck:
+      test: ["CMD", "wget", "-q", "http://localhost:9090/-/ready", "-O", "/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
     networks:
       - vestra_internal
     logging:
@@ -267,6 +311,18 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "http://localhost:3000/api/health", "-O", "/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
     networks:
       - vestra_internal
     logging:
@@ -289,6 +345,18 @@ services:
     volumes:
       - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-q", "http://localhost:9093/-/healthy", "-O", "/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
     networks:
       - vestra_internal
     logging:
@@ -314,6 +382,18 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
     pid: host
+    healthcheck:
+      test: ["CMD", "wget", "-q", "http://localhost:9100/metrics", "-O", "/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
     networks:
       - vestra_internal
     logging:
@@ -333,7 +413,20 @@ services:
     ports:
       - "127.0.0.1:9121:9121"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "http://localhost:9121/metrics", "-O", "/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
     networks:
       - vestra_internal
     logging:
@@ -354,6 +447,18 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "http://localhost:9187/metrics", "-O", "/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
     networks:
       - vestra_internal
     logging:
@@ -387,6 +492,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; r=redis.Redis.from_url('${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}'); r.ping(); print('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     deploy:
       resources:
         limits:
@@ -415,7 +526,20 @@ services:
     ports:
       - "127.0.0.1:5555:5555"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "http://localhost:5555/flower", "-O", "/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
     networks:
       - vestra_internal
     logging:

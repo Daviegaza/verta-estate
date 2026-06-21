@@ -1,9 +1,9 @@
 """Unit tests for Redis utilities — rate limiter, caching, idempotency."""
 from __future__ import annotations
 
-import time
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 from app.core.redis import (
     InMemoryRateLimiter,
@@ -11,7 +11,6 @@ from app.core.redis import (
     _make_cache_key,
     check_and_mark_processed,
 )
-
 
 # ── InMemoryRateLimiter Tests ─────────────────────────────────────────────────
 
@@ -75,7 +74,6 @@ class TestInMemoryRateLimiter:
     def test_thread_safety(self):
         import threading
         limiter = InMemoryRateLimiter(max_requests=100, window_seconds=60)
-        results = []
         errors = []
 
         def hammer(key):

@@ -3,7 +3,6 @@ Integration tests for the complete authentication flow:
 Register → Login → Get Profile → Change Password → Logout
 Also tests account lockout, CAPTCHA validation, and edge cases.
 """
-import pytest
 from httpx import AsyncClient
 
 

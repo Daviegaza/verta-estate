@@ -47,6 +47,7 @@ export function useWebSocket(): UseWebSocketReturn {
         wsRef.current.disconnect();
         wsRef.current = null;
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- cleanup on disconnect
       setConnected(false);
       return;
     }
@@ -72,7 +73,7 @@ export function useWebSocket(): UseWebSocketReturn {
   const subscribe = useCallback(
     <K extends WsEventType>(type: K, handler: WsHandler<K>): (() => void) => {
       if (wsRef.current) {
-        return wsRef.current.on(type, handler as any);
+        return wsRef.current.on(type, handler as WsHandler<WsEventType>);
       }
       // Fallback: return a no-op if WS not yet connected
       return () => {};

@@ -3,13 +3,9 @@ Integration tests for the complete payment flow:
 Initiate M-Pesa Payment → Handle Callback → Trigger Verification
 Also tests payment status retrieval, replay protection, and security.
 """
-import hashlib
-import hmac
-import json
 
 import pytest
 from httpx import AsyncClient
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────────
 

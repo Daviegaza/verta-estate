@@ -181,7 +181,7 @@ class VestraAPIClient {
     this.failedQueue = [];
   }
 
-  private clearAuthAndRedirect(originalRequest?: InternalAxiosRequestConfig): void {
+  private clearAuthAndRedirect(_originalRequest?: InternalAxiosRequestConfig): void {
     if (typeof window === 'undefined') return;
 
     // Only force-redirect if user is on an explicitly auth-required path

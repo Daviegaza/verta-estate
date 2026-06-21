@@ -1,19 +1,17 @@
 """Unit tests for the durable task queue."""
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock, call
 
 from app.core.task_queue import (
-    enqueue,
-    TASK_CONFIGS,
     DEFAULT_TASK_CONFIG,
-    STREAM_EVENTS,
-    STREAM_DEAD_LETTER,
-    register_handler,
+    TASK_CONFIGS,
     _handlers,
+    enqueue,
+    register_handler,
 )
-
 
 # ── Enqueue Tests ─────────────────────────────────────────────────────────────
 

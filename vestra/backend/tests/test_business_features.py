@@ -5,13 +5,12 @@ Subscriptions, Rentals, Escrow, Disputes, Reviews, Referrals.
 import pytest
 from httpx import AsyncClient
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────────
 
 @pytest.fixture
 def registered_buyer_token(client: AsyncClient, test_user_data: dict):
     """Register a buyer and return an access token."""
-    async def _register(email_override: str = None):
+    async def _register(email_override: str | None = None):
         data = {**test_user_data}
         if email_override:
             data["email"] = email_override
@@ -25,7 +24,7 @@ def registered_buyer_token(client: AsyncClient, test_user_data: dict):
 @pytest.fixture
 def registered_agent_token(client: AsyncClient, test_agent_data: dict):
     """Register an agent and return an access token."""
-    async def _register(email_override: str = None):
+    async def _register(email_override: str | None = None):
         data = {**test_agent_data}
         if email_override:
             data["email"] = email_override

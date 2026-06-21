@@ -1,21 +1,18 @@
 """Unit tests for security module — password hashing, JWT, token validation."""
 from __future__ import annotations
 
-import time
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.core.config import settings
+from app.core.hashing import get_password_hash, verify_password
 from app.core.security import (
-    validate_password_strength,
+    MAX_PASSWORD_LENGTH,
+    MIN_PASSWORD_LENGTH,
     create_access_token,
     create_refresh_token,
     decode_token,
-    MIN_PASSWORD_LENGTH,
-    MAX_PASSWORD_LENGTH,
+    validate_password_strength,
 )
-from app.core.hashing import verify_password, get_password_hash
-from app.core.config import settings
-
 
 # ── Password Hashing (async bcrypt via executor) ──────────────────────────────
 
@@ -71,7 +68,7 @@ class TestPasswordStrength:
         assert "at least" in error.lower()
 
     def test_too_long(self):
-        is_valid, error = validate_password_strength("A1" + "a" * (MAX_PASSWORD_LENGTH + 1))
+        is_valid, _error = validate_password_strength("A1" + "a" * (MAX_PASSWORD_LENGTH + 1))
         assert is_valid is False
 
     def test_no_uppercase(self):
@@ -90,7 +87,7 @@ class TestPasswordStrength:
         assert "number" in error.lower()
 
     def test_exactly_minimum_length(self):
-        is_valid, error = validate_password_strength("Abcdef1" + "x" * (MIN_PASSWORD_LENGTH - 7))
+        is_valid, _error = validate_password_strength("Abcdef1" + "x" * (MIN_PASSWORD_LENGTH - 7))
         assert is_valid is True
 
     @pytest.mark.parametrize("pw", [

@@ -4,12 +4,12 @@ Uses a test PostgreSQL database and real Redis for async integration testing.
 """
 import asyncio
 import os
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # ── Disable rate limiting during tests ────────────────────────────────────────
 # Tests share the same client IP (127.0.0.1) and would be rate-limited.
@@ -29,12 +29,11 @@ TEST_DATABASE_URL = os.getenv(
 # CRITICAL: Override DATABASE_URL so the FastAPI app connects to the test DB.
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
-from app.core.config import settings
-from app.core.database import Base
-from app.main import app
-
 # ── Patch rate limiters to be effectively unlimited during tests ──────────────
-import app.core.middleware as _mw
+import app.core.middleware as _mw  # noqa: E402
+from app.core.database import Base  # noqa: E402
+from app.main import app  # noqa: E402
+
 _mw.auth_limiter.max_requests = 999_999
 _mw.general_limiter.max_requests = 999_999
 _mw.admin_limiter.max_requests = 999_999
@@ -65,6 +64,7 @@ async def setup_database():
     """Create all tables once per test session. Each test uses unique data
     (timestamp-based emails/phones) so no per-test cleanup is needed."""
     from sqlalchemy import text as sa_text
+
     import app.models  # noqa: F401 - ensure all models registered with Base.metadata
     async with test_engine.begin() as conn:
         await conn.execute(sa_text("DROP SCHEMA public CASCADE"))

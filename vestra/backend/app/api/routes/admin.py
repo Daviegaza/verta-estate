@@ -456,6 +456,130 @@ async def revenue_reconcile(
     """Reconcile completed payments sum with expected revenue to detect discrepancies."""
     return await get_revenue_reconciliation(db)
 
+
+@router.get("/revenue/breakdown")
+async def revenue_channel_breakdown(
+    period: str = Query("monthly", pattern="^(daily|weekly|monthly|yearly)$"),
+    days: int = Query(30, ge=1, le=365),
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Advanced revenue breakdown across all monetization channels:
+    subscriptions, verification fees, escrow, featured listings,
+    enterprise API, payment processing margin, and referral payouts.
+    """
+    from app.services.revenue_analytics import get_revenue_breakdown
+
+    breakdown = await get_revenue_breakdown(db, period=period, days=days)
+    return {
+        "period": period,
+        "days": days,
+        "currency": "KES",
+        "revenue": {
+            "subscriptions_mrr": round(breakdown.subscriptions_mrr, 2),
+            "verification_fees": round(breakdown.verification_fees, 2),
+            "escrow_fees": round(breakdown.escrow_fees, 2),
+            "featured_listings": round(breakdown.featured_listings, 2),
+            "enterprise_api": round(breakdown.enterprise_api, 2),
+            "payment_processing": round(breakdown.payment_processing, 2),
+        },
+        "costs": {
+            "referral_payouts": round(breakdown.referral_payouts, 2),
+        },
+        "total_revenue": round(breakdown.total_revenue, 2),
+        "net_revenue": round(breakdown.net_revenue, 2),
+        "active_subscribers": getattr(breakdown, "active_subscribers_count", 0),
+    }
+
+
+@router.get("/revenue/mrr")
+async def mrr_metrics_endpoint(
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Monthly Recurring Revenue metrics:
+    current MRR, growth rate, active subscribers, ARPU, churn rate,
+    net new MRR, expansion MRR, contraction MRR.
+    """
+    from app.services.revenue_analytics import get_mrr_metrics
+
+    metrics = await get_mrr_metrics(db)
+    return {
+        "current_mrr": round(metrics.current_mrr, 2),
+        "mrr_growth_pct": metrics.mrr_growth_pct,
+        "active_subscribers": metrics.active_subscribers,
+        "arpu": round(metrics.avg_revenue_per_user, 2),
+        "churn_rate_pct": metrics.churn_rate_pct,
+        "net_new_mrr": round(metrics.net_new_mrr, 2),
+        "expansion_mrr": round(metrics.expansion_mrr, 2),
+        "contraction_mrr": round(metrics.contraction_mrr, 2),
+        "currency": "KES",
+    }
+
+
+@router.get("/revenue/forecast")
+async def revenue_forecast_endpoint(
+    months: int = Query(12, ge=1, le=60),
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Revenue forecast based on current growth trends.
+    Projects monthly and annual revenue N months out.
+    """
+    from app.services.revenue_analytics import get_revenue_forecast
+
+    forecast = await get_revenue_forecast(db, months=months)
+    return {
+        "projected_monthly": round(forecast.projected_monthly, 2),
+        "projected_annual": round(forecast.projected_annual, 2),
+        "confidence": forecast.confidence,
+        "monthly_growth_rate_pct": forecast.growth_rate_pct,
+        "projection_months": months,
+        "assumptions": forecast.assumptions,
+        "currency": "KES",
+    }
+
+
+@router.get("/revenue/timeline")
+async def revenue_timeline_endpoint(
+    days: int = Query(90, ge=1, le=730),
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Daily revenue timeline data for revenue charts.
+    Returns date, revenue, and transaction count per day.
+    """
+    from app.services.revenue_analytics import get_revenue_timeline
+
+    timeline = await get_revenue_timeline(db, days=days)
+    return {"timeline": timeline, "period_days": days, "currency": "KES"}
+
+
+@router.get("/revenue/conversions")
+async def conversion_metrics_endpoint(
+    admin=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Business conversion metrics:
+    total users, paying users, conversion rate, DAU, MAU, DAU/MAU ratio.
+    """
+    from app.services.revenue_analytics import get_conversion_metrics
+
+    metrics = await get_conversion_metrics(db)
+    return {
+        "total_users": metrics["total_users"],
+        "paying_users": metrics["paying_users"],
+        "conversion_rate_pct": metrics["conversion_rate_pct"],
+        "active_users_30d": metrics["active_users_30d"],
+        "dau": metrics["dau"],
+        "dau_mau_ratio_pct": metrics["dau_mau_ratio_pct"],
+    }
+
 @router.get("/audit-logs")
 async def list_audit_logs(
     skip: int = 0,

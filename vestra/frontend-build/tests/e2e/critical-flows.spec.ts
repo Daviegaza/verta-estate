@@ -5,7 +5,6 @@ import {
   TEST_LANDLORD,
   SAMPLE_PROPERTY,
   uniqueEmail,
-  clearAuthToken,
 } from '../utils/test-helpers';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -356,7 +355,7 @@ test.describe('Critical User Flows', () => {
       await expect(langSwitcher).toBeVisible({ timeout: 5000 });
 
       // Get current page text in English
-      const originalText = await page.locator('h1').first().textContent();
+      await page.locator('h1').first().textContent();
 
       // Switch to Swahili
       const swOption = page.locator('option:has-text("Swahili"), option[value="sw"], button:has-text("SW"), a:has-text("Kiswahili")').first();
@@ -433,11 +432,11 @@ test.describe('Critical User Flows', () => {
       // Trigger the beforeinstallprompt event
       await page.goto('/');
 
-      const installPromptShown = await page.evaluate(() => {
+      await page.evaluate(() => {
         return new Promise<boolean>((resolve) => {
           // Simulate the beforeinstallprompt event
-          const event = new Event('beforeinstallprompt') as any;
-          event.userChoice = Promise.resolve({ outcome: 'accepted' });
+          const event = new Event('beforeinstallprompt') as Event & { userChoice?: Promise<{ outcome: string }> };
+          (event as Event & { userChoice: Promise<{ outcome: string }> }).userChoice = Promise.resolve({ outcome: 'accepted' });
           window.dispatchEvent(event);
           resolve(true);
         });

@@ -69,7 +69,7 @@ _include_all_routers(api_router)
 @api_router.get("/version", tags=["meta"], summary="API version info")
 async def api_version_v1():
     return {
-        "version": "3.0.0",
+        "version": "4.0.0",
         "api_version": "v1",
         "deprecated_versions": [],
     }
@@ -86,7 +86,7 @@ _include_all_routers(legacy_router)
 @legacy_router.get("/version", tags=["meta"], summary="API version info")
 async def api_version_legacy():
     return {
-        "version": "3.0.0",
+        "version": "4.0.0",
         "api_version": "v1",
         "deprecated_versions": [],
     }

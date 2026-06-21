@@ -2,24 +2,20 @@
 from __future__ import annotations
 
 import pytest
+
 from app.ai.engine import (
+    FRAUD_KEYWORD_WEIGHTS,
+    KENYA_PRICE_BANDS,
+    REQUIRED_DOCUMENTS,
+    DocumentAnalyser,
     FraudDetector,
-    TrustEngine,
-    TrustComponent,
-    TrustResult,
+    MarketIntelligence,
     PriceAnalyser,
     SearchParser,
-    DocumentAnalyser,
-    ValuationEngine,
-    MarketIntelligence,
-    VerificationResult,
     SearchResult,
-    ValuationResult,
-    KENYA_PRICE_BANDS,
-    FRAUD_KEYWORD_WEIGHTS,
-    REQUIRED_DOCUMENTS,
+    TrustEngine,
+    ValuationEngine,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -97,17 +93,17 @@ def suspicious_property_data():
 
 class TestFraudDetector:
     def test_clean_property_scores_low(self, fraud_detector, clean_property_data):
-        score, flags, positives = fraud_detector.score(**clean_property_data)
+        score, flags, _positives = fraud_detector.score(**clean_property_data)
         assert score < 20, f"Clean property should score < 20, got {score}"
         assert len(flags) == 0, f"No flags expected for clean data, got {flags}"
 
     def test_suspicious_property_scores_high(self, fraud_detector, suspicious_property_data):
-        score, flags, positives = fraud_detector.score(**suspicious_property_data)
+        score, flags, _positives = fraud_detector.score(**suspicious_property_data)
         assert score > 40, f"Suspicious property should score > 40, got {score}"
         assert len(flags) > 3, f"Many flags expected, got {len(flags)}"
 
     def test_urgent_keyword_detected(self, fraud_detector):
-        score, flags, positives = fraud_detector.score(
+        _score, flags, _positives = fraud_detector.score(
             title="Urgent sale!!!",
             description="Must sell today. Act fast!",
             price=5_000_000,
@@ -121,7 +117,7 @@ class TestFraudDetector:
         assert len(keyword_flags) >= 1, f"Expected 'urgent' keyword flag, got {flags}"
 
     def test_western_union_max_penalty(self, fraud_detector):
-        score, flags, _ = fraud_detector.score(
+        score, _flags, _ = fraud_detector.score(
             title="Property for sale",
             description="Pay via Western Union",
             price=5_000_000,
@@ -215,7 +211,7 @@ class TestFraudDetector:
             agent_license="EA-1111",
         )
         # Same price for sale is suspiciously low (5M min for sale)
-        score_sale, flags_sale, _ = fraud_detector.score(
+        _score_sale, flags_sale, _ = fraud_detector.score(
             title="Apartment",
             description="For sale",
             price=50_000,
@@ -371,7 +367,7 @@ class TestTrustEngine:
 
 class TestPriceAnalyser:
     def test_fair_price(self, price_analyser):
-        result, details = price_analyser.analyse(
+        result, _details = price_analyser.analyse(
             price=8_500_000,
             city="kilimani",
             listing_type="sale",
@@ -381,7 +377,7 @@ class TestPriceAnalyser:
         assert result in ("fair", "under", "over")
 
     def test_price_below_market(self, price_analyser):
-        result, details = price_analyser.analyse(
+        result, _details = price_analyser.analyse(
             price=500_000,
             city="karen",
             listing_type="sale",
@@ -391,7 +387,7 @@ class TestPriceAnalyser:
         assert result in ("under", "fair", "over")
 
     def test_price_above_market(self, price_analyser):
-        result, details = price_analyser.analyse(
+        result, _details = price_analyser.analyse(
             price=500_000_000,
             city="kitengela",
             listing_type="sale",
@@ -401,7 +397,7 @@ class TestPriceAnalyser:
         assert result in ("over", "fair", "under")
 
     def test_rent_prices_analyzed_correctly(self, price_analyser):
-        result, details = price_analyser.analyse(
+        result, _details = price_analyser.analyse(
             price=35_000,
             city="kilimani",
             listing_type="rent",
@@ -412,7 +408,7 @@ class TestPriceAnalyser:
 
     def test_unknown_city_uses_default(self, price_analyser):
         """Should not crash on unknown cities — use default band."""
-        result, details = price_analyser.analyse(
+        result, _details = price_analyser.analyse(
             price=5_000_000,
             city="unknown_city_xyz",
             listing_type="sale",
@@ -487,16 +483,16 @@ class TestSearchParser:
 
 class TestDocumentAnalyser:
     def test_sale_requires_all_six(self, document_analyser):
-        flags, positives = document_analyser.analyse(listing_type="sale", documents=[])
+        flags, _positives = document_analyser.analyse(listing_type="sale", documents=[])
         assert len(flags) >= len(REQUIRED_DOCUMENTS["sale"]) - 1  # Some flags aggregated
 
     def test_rent_requires_two(self, document_analyser):
-        flags, positives = document_analyser.analyse(listing_type="rent", documents=[])
+        flags, _positives = document_analyser.analyse(listing_type="rent", documents=[])
         assert len(flags) > 0  # Should have at least some flags
 
     def test_all_documents_present(self, document_analyser):
         all_docs = [{"type": t} for t in REQUIRED_DOCUMENTS["sale"]]
-        flags, positives = document_analyser.analyse(listing_type="sale", documents=all_docs)
+        flags, _positives = document_analyser.analyse(listing_type="sale", documents=all_docs)
         assert len(flags) == 0  # No missing docs → no flags
 
     def test_unknown_listing_type(self, document_analyser):

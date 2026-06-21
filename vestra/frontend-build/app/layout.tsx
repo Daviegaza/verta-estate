@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Vestra — AI-Powered Property Trust Platform | Kenya',
   description: 'Buy, sell, rent, and verify properties in Kenya with AI-powered trust scoring. M-Pesa payments, title chain verification, and escrow protection.',

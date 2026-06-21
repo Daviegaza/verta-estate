@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/api';
@@ -14,6 +14,11 @@ export default function AdminLoginPage() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Pre-fetch CSRF cookie on mount (required before any POST request)
+  useEffect(() => {
+    fetch('/api/auth/me').catch(() => {}); // Ignore 401 — we just need the CSRF cookie
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

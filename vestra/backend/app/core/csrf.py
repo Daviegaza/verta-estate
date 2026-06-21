@@ -100,8 +100,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         response.set_cookie(
             key=CSRF_COOKIE_NAME,
             value=token,
-            httponly=True,       # Not readable by JavaScript (defeats XSS exfiltration)
-            samesite="strict",   # Never sent on cross-site requests
+            httponly=False,      # Must be readable by JS to send back as X-CSRF-Token header
+            samesite="strict",   # Never sent on cross-site requests (prevents CSRF)
             secure=request.url.scheme == "https" or settings.ENVIRONMENT == "production",
             max_age=3600,        # 1 hour
             path="/",

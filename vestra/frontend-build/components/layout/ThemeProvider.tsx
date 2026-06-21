@@ -14,11 +14,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [resolved, setResolved] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
+    if (typeof localStorage === 'undefined') return;
     const stored = localStorage.getItem('vestra-theme') as Theme | null;
     if (stored) setThemeState(stored);
   }, []);
 
   useEffect(() => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
     const root = document.documentElement;
     let resolvedTheme: 'light' | 'dark';
     if (theme === 'system') {

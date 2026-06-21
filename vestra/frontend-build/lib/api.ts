@@ -7,6 +7,7 @@ declare module 'axios' {
   }
 }
 
+import { getCookie } from '@/lib/utils';
 import type {
   AuthToken, User, Property, PropertyListResponse,
   PropertyCreate, Verification, Payment, AdminStats,
@@ -17,7 +18,10 @@ import type {
   APIKeyInfo, WebhookInfo,
 } from '@/types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// In development, use relative URLs so Next.js rewrites proxy to the backend.
+// In production/staging, also use relative URLs (nginx handles the proxying).
+// The NEXT_PUBLIC_API_URL is only needed for server-side requests or direct debugging.
+const BASE_URL = typeof window !== 'undefined' ? '' : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000');
 const isDev = process.env.NODE_ENV !== 'production';
 const MAX_RETRIES = isDev ? 1 : 2;       // Dev: 1 retry. Prod: 2 retries.
 const RETRY_DELAY_MS = isDev ? 300 : 800; // Dev: 300ms. Prod: 800ms.
@@ -64,7 +68,7 @@ class VestraAPIClient {
       headers: { 'Content-Type': 'application/json' },
     });
 
-    // Attach token and correlation ID
+    // Attach token, correlation ID, and CSRF token
     this.client.interceptors.request.use((config) => {
       if (typeof window !== 'undefined') {
         const token = localStorage.getItem('vestra_token');
@@ -75,6 +79,14 @@ class VestraAPIClient {
         const correlationId = crypto.randomUUID?.()?.slice(0, 12) ||
           Math.random().toString(36).slice(2, 14);
         config.headers['X-Correlation-ID'] = correlationId;
+        // Add CSRF token for state-changing requests
+        const method = (config.method || 'get').toUpperCase();
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+          const csrfToken = getCookie('vestra_csrf');
+          if (csrfToken) {
+            config.headers['X-CSRF-Token'] = csrfToken;
+          }
+        }
       }
       return config;
     });

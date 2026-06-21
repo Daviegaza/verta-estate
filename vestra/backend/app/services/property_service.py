@@ -91,26 +91,26 @@ async def create_property(db: AsyncSession, owner_id: int, data: PropertyCreate)
     return prop
 
 
-async def get_property_by_id(db: AsyncSession, property_id: int):
+async def get_property_by_id(db: AsyncSession, property_id: int) -> dict | None:
     """
-    Get property by ID. Returns a dict (from cache) or ORM object (from DB).
-    The routes handle both — they call _prop_to_dict for ORM objects.
+    Get property by ID. Always returns a dict or None.
+    Uses Redis cache with 5-minute TTL for performance.
     """
     # Try cache first — returns serialized dict
     cache_key = f"vestra:prop:{property_id}"
     cached = await cache_get(cache_key)
     if cached is not None:
-        # cached is already a dict matching _prop_to_dict output
         return cached
 
     result = await db.execute(select(Property).where(Property.id == property_id))
     prop = result.scalar_one_or_none()
-    if prop:
-        # Store already-serialized dict in cache
-        from app.api.routes.properties import _prop_to_dict
-        prop_dict = _prop_to_dict(prop)
-        await cache_set(cache_key, prop_dict, ttl=CACHE_TTL_PROPERTY)
-    return prop
+    if not prop:
+        return None
+
+    # Serialize and cache
+    prop_dict = _prop_to_cache_dict(prop)
+    await cache_set(cache_key, prop_dict, ttl=CACHE_TTL_PROPERTY)
+    return prop_dict
 
 
 def _prop_to_cache_dict(prop: Property) -> dict:

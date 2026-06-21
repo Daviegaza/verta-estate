@@ -4,6 +4,7 @@ from sqlalchemy import select, func
 from typing import Optional
 from app.models.payment import Payment, PaymentStatus, PaymentMethod, PaymentPurpose
 from app.services.mpesa_service import initiate_stk_push, parse_mpesa_callback
+from app.core.config import settings
 
 
 VERIFICATION_REPORT_PRICE = 500.0   # KES

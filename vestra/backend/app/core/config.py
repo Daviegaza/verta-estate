@@ -34,6 +34,30 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
 
+    # ── PayPal ──────────────────────────────────────────────────────────────
+    PAYPAL_CLIENT_ID: str = ""
+    PAYPAL_CLIENT_SECRET: str = ""
+    PAYPAL_ENV: str = "sandbox"  # sandbox | live
+
+    # ── Bank Transfer (Kenya) ────────────────────────────────────────────────
+    BANK_ACCOUNT_NAME: str = "Vestra Technologies Ltd"
+    BANK_ACCOUNT_NUMBER_KCB: str = ""
+    BANK_ACCOUNT_NUMBER_EQUITY: str = ""
+    BANK_ACCOUNT_NUMBER_COOP: str = ""
+    BANK_ACCOUNT_NUMBER_NCBA: str = ""
+    BANK_ACCOUNT_NUMBER_ABSA: str = ""
+
+    # ── Cryptocurrency ───────────────────────────────────────────────────────
+    CRYPTO_WALLET_ADDRESS_USDT: str = ""
+    CRYPTO_RPC_URL: str = "https://polygon-rpc.com"
+    CRYPTO_ENABLED: bool = False
+
+    # ── Airtel Money ─────────────────────────────────────────────────────────
+    AIRTEL_CLIENT_ID: str = ""
+    AIRTEL_CLIENT_SECRET: str = ""
+    AIRTEL_ENV: str = "sandbox"  # sandbox | production
+    AIRTEL_CALLBACK_URL: str = "https://yourdomain.com/api/payments/airtel/callback"
+
     # ── Email ───────────────────────────────────────────────────────────────
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
@@ -65,7 +89,7 @@ class Settings(BaseSettings):
 
     # ── App ──────────────────────────────────────────────────────────────────
     APP_NAME: str = "Vestra"
-    APP_VERSION: str = "3.0.0"
+    APP_VERSION: str = "4.0.0"
     BASE_URL: str = "http://localhost:3000"  # Public-facing URL for links in emails etc.
     DEBUG: bool = False
     ENVIRONMENT: str = "development"  # development | staging | production
@@ -86,6 +110,11 @@ class Settings(BaseSettings):
     # ── Security ────────────────────────────────────────────────────────────
     CSP_ENABLED: bool = True
     CSRF_ENABLED: bool = True
+    ENCRYPTION_KEY: str = ""  # Fernet key for encrypting sensitive data at rest. Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+    # ── Session ──────────────────────────────────────────────────────────────
+    SESSION_IDLE_TIMEOUT_MINUTES: int = 30  # Auto-logout after inactivity
+    MAX_CONCURRENT_SESSIONS: int = 5
 
     @property
     def cors_origins_list(self) -> List[str]:
@@ -110,3 +139,7 @@ if settings.ENVIRONMENT == "production":
         "DATABASE_URL must enforce SSL (add ?ssl=require) in production!"
     assert settings.TURNSTILE_SECRET_KEY, \
         "TURNSTILE_SECRET_KEY must be set in production for CAPTCHA!"
+    assert settings.ENCRYPTION_KEY, \
+        "ENCRYPTION_KEY must be set in production for data encryption!"
+    assert settings.STRIPE_SECRET_KEY, \
+        "STRIPE_SECRET_KEY must be set in production!"

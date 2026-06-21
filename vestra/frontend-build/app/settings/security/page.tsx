@@ -7,6 +7,7 @@ import AuthGuard from '@/components/layout/AuthGuard';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import PasswordStrengthMeter from '@/components/ui/PasswordStrengthMeter';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/api';
 import { Key, Shield, Smartphone, Lock, ArrowLeft, Clock } from 'lucide-react';
@@ -144,6 +145,7 @@ function SecurityContent() {
                 leftElement={<Key className="w-4 h-4" />}
                 hint="Use a strong, unique password with at least 8 characters"
               />
+              {newPassword.length > 0 && <PasswordStrengthMeter password={newPassword} />}
               <Input
                 label="Confirm New Password"
                 type="password"

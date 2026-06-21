@@ -14,15 +14,47 @@ from app.services.payment_service import (
 from app.services.verification_service import (
     create_verification_request, run_ai_verification
 )
-from app.models.payment import PaymentPurpose, PaymentStatus
+from app.services.payment_providers import (
+    list_available_providers, get_provider_by_method,
+    PaymentRequest as ProvPaymentRequest,
+)
+import app.services.paypal_provider  # noqa: F401 — registers PayPalProvider
+import app.services.bank_transfer_provider  # noqa: F401 — registers BankTransferProvider
+import app.services.crypto_provider  # noqa: F401 — registers CryptoProvider
+import app.services.airtel_money_provider  # noqa: F401 — registers AirtelMoneyProvider
+from app.models.payment import PaymentMethod, PaymentPurpose, PaymentStatus
 from app.models.user import UserRole
 from app.core.redis import cache_delete, check_and_mark_processed
+from app.schemas.shared import SuccessResponse
+from pydantic import BaseModel
+from typing import Optional
 import asyncio
 import hashlib
 import hmac
 import logging
+import uuid as _uuid
 
 logger = logging.getLogger("vestra")
+
+
+# ── Pydantic schemas for new endpoints ──────────────────────────────────────
+
+
+class InitiatePaymentRequest(BaseModel):
+    phone_number: Optional[str] = None
+    email: Optional[str] = None
+    amount: float
+    currency: str = "KES"
+    purpose: str = "verification_report"
+    reference_id: Optional[int] = None
+    description: str = "Vestra Payment"
+    callback_url: Optional[str] = None
+    metadata: dict = {}
+
+
+class AvailableMethodsRequest(BaseModel):
+    country_code: str = "KE"
+
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
 # Safaricom M-Pesa production IP ranges (verified from Safaricom documentation)
@@ -59,6 +91,254 @@ def _verify_callback_signature(body: bytes, signature: str | None) -> bool:
         hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, signature)
+
+
+# ── Payment Methods Discovery ──────────────────────────────────────────────────
+
+
+@router.post("/methods", response_model=list[dict])
+async def get_available_methods(
+    data: AvailableMethodsRequest,
+    current_user=Depends(get_current_user),
+):
+    """List available payment methods for the user's country."""
+    country_code = data.country_code.upper()
+
+    # Determine which providers are available for this country
+    methods = [
+        {
+            "method": "mpesa",
+            "display_name": "M-Pesa",
+            "currencies": ["KES"],
+            "countries": ["KE"],
+            "min_amount": 1,
+            "max_amount": 150000,
+            "description": "Pay via M-Pesa mobile money",
+        },
+        {
+            "method": "stripe",
+            "display_name": "Card (Stripe)",
+            "currencies": ["KES", "USD", "EUR", "GBP"],
+            "countries": ["KE", "TZ", "UG", "NG", "GH", "ZA"],
+            "min_amount": 1,
+            "max_amount": 999999,
+            "description": "Pay via credit/debit card",
+        },
+        {
+            "method": "bank_transfer",
+            "display_name": "Bank Transfer",
+            "currencies": ["KES"],
+            "countries": ["KE"],
+            "min_amount": 100,
+            "max_amount": 9999999,
+            "description": "Pay via direct bank transfer",
+        },
+        {
+            "method": "paypal",
+            "display_name": "PayPal",
+            "currencies": ["USD", "EUR", "GBP"],
+            "countries": ["KE", "UG", "NG", "GH", "ZA"],
+            "min_amount": 1,
+            "max_amount": 999999,
+            "description": "Pay via PayPal account or card",
+        },
+        {
+            "method": "airtel_money",
+            "display_name": "Airtel Money",
+            "currencies": ["KES"],
+            "countries": ["KE"],
+            "min_amount": 1,
+            "max_amount": 150000,
+            "description": "Pay via Airtel Money mobile money",
+        },
+        {
+            "method": "crypto",
+            "display_name": "Cryptocurrency (USDT/USDC)",
+            "currencies": ["USDT", "USDC"],
+            "countries": ["KE", "UG", "NG", "GH", "ZA"],
+            "min_amount": 5,
+            "max_amount": 9999999,
+            "description": "Pay with USDT or USDC on Polygon network",
+        },
+    ]
+
+    # Filter to available providers (those registered)
+    registered = {p["type"] for p in list_available_providers()}
+    method_registry = {
+        "mpesa": "mpesa_ke",
+        "stripe": "stripe",
+        "bank_transfer": "bank_transfer",
+        "paypal": "paypal",
+        "airtel_money": "airtel_money",
+        "crypto": "crypto",
+    }
+
+    available = []
+    for m in methods:
+        pt = method_registry.get(m["method"])
+        if pt and pt in registered and country_code in m["countries"]:
+            available.append(m)
+
+    return available
+
+
+# ── Generic Payment Initiation ────────────────────────────────────────────────
+
+
+@router.post("/initiate/{method}", response_model=dict)
+async def initiate_payment(
+    method: str,
+    data: InitiatePaymentRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Initiate a payment using the specified payment method.
+
+    Routes to the correct provider implementation based on the method parameter.
+    Supported methods: mpesa, stripe, bank_transfer, paypal, airtel_money, crypto
+    """
+    # Route M-Pesa through the existing workflow (which handles DB + STK Push)
+    if method == "mpesa":
+        try:
+            purpose = PaymentPurpose(data.purpose)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid payment purpose: {data.purpose}")
+
+        payment = await initiate_mpesa_payment(
+            db=db,
+            user_id=current_user.id,
+            phone_number=data.phone_number or "",
+            amount=data.amount,
+            purpose=purpose,
+            reference_id=data.reference_id,
+            description=data.description,
+        )
+        return {
+            "payment_id": payment.id,
+            "checkout_request_id": payment.mpesa_checkout_request_id,
+            "status": payment.status.value,
+            "message": "Check your phone and enter your M-Pesa PIN",
+            "amount": payment.amount,
+            "currency": payment.currency,
+        }
+
+    # Route Stripe through the existing workflow
+    if method in ("stripe", "card"):
+        import stripe as stripe_lib
+        stripe_lib.api_key = settings.STRIPE_SECRET_KEY
+
+        if not settings.STRIPE_SECRET_KEY:
+            raise HTTPException(status_code=502, detail="Stripe is not configured")
+
+        try:
+            purpose = PaymentPurpose(data.purpose)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid payment purpose: {data.purpose}")
+
+        from app.models.payment import Payment
+        reference = f"STR-{_uuid.uuid4().hex[:10].upper()}"
+        payment = Payment(
+            user_id=current_user.id,
+            amount=data.amount,
+            currency=data.currency,
+            method=PaymentMethod.stripe,
+            purpose=purpose,
+            status=PaymentStatus.pending,
+            reference=reference,
+            description=data.description,
+            payment_metadata={"reference_id": data.reference_id, **(data.metadata or {})},
+        )
+        db.add(payment)
+        await db.commit()
+        await db.refresh(payment)
+
+        # Create Stripe PaymentIntent
+        intent = stripe_lib.PaymentIntent.create(
+            amount=int(data.amount * 100),
+            currency=data.currency.lower(),
+            description=data.description,
+            metadata={
+                "payment_id": str(payment.id),
+                "user_id": str(current_user.id),
+                "reference": reference,
+                "purpose": data.purpose,
+                **(data.metadata or {}),
+            },
+        )
+        payment.stripe_payment_intent_id = intent.id
+        payment.status = PaymentStatus.processing
+        await db.commit()
+        await db.refresh(payment)
+
+        return {
+            "payment_id": payment.id,
+            "client_secret": intent.client_secret,
+            "status": payment.status.value,
+            "amount": payment.amount,
+            "currency": payment.currency,
+            "publishable_key": "",  # Frontend should inject its own Stripe publishable key
+        }
+
+    # For other providers, use the pluggable provider interface
+    provider = get_provider_by_method(method)
+    if provider is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported payment method: {method}",
+        )
+
+    from decimal import Decimal
+    prov_request = ProvPaymentRequest(
+        amount=Decimal(str(data.amount)),
+        currency=data.currency,
+        phone_number=data.phone_number,
+        email=data.email,
+        reference=f"VST-{_uuid.uuid4().hex[:10].upper()}",
+        description=data.description,
+        callback_url=data.callback_url,
+        metadata={
+            "user_id": current_user.id,
+            "purpose": data.purpose,
+            "reference_id": data.reference_id,
+            **(data.metadata or {}),
+        },
+    )
+
+    result = await provider.initiate_payment(prov_request)
+
+    if not result.success:
+        raise HTTPException(
+            status_code=502,
+            detail=result.error_message or f"{method} payment failed",
+        )
+
+    response = {
+        "success": result.success,
+        "provider": result.provider,
+        "provider_transaction_id": result.provider_transaction_id,
+        "status": result.status,
+        "redirect_url": result.redirect_url,
+        "raw": result.raw_response,
+    }
+
+    # For bank_transfer, include the bank account details
+    if method == "bank_transfer" and result.raw_response:
+        response["bank_accounts"] = result.raw_response.get("bank_accounts", [])
+        response["virtual_reference"] = result.raw_response.get("virtual_reference", "")
+        response["instructions"] = result.raw_response.get("instructions", "")
+
+    # For crypto, include the wallet address
+    if method == "crypto" and result.raw_response:
+        response["wallet_address"] = result.raw_response.get("wallet_address", "")
+        response["network"] = result.raw_response.get("network", "")
+        response["asset"] = result.raw_response.get("asset", "")
+        response["instructions"] = result.raw_response.get("instructions", "")
+
+    return response
+
+
+# ── M-Pesa ─────────────────────────────────────────────────────────────────────
 
 
 @router.post("/mpesa/initiate", response_model=dict)
@@ -250,6 +530,196 @@ async def my_payments(
     db: AsyncSession = Depends(get_db),
 ):
     return await get_user_payments(db, current_user.id)
+
+
+# ── PayPal Webhook ────────────────────────────────────────────────────────────────
+
+
+@router.post("/paypal/callback")
+async def paypal_callback(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    PayPal webhook endpoint.
+
+    Triggered by PayPal after payment events (CHECKOUT.ORDER.APPROVED,
+    PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED, etc.).
+    Verifies signature via PayPal POSTBACK API.
+    Idempotent via Redis deduplication (paypal:{event_id}).
+    """
+    import json as _json
+
+    payload = await request.body()
+    headers_dict = {k: v for k, v in request.headers.items()}
+
+    try:
+        raw_data = _json.loads(payload.decode())
+    except Exception:
+        logger.warning('{"event":"paypal_webhook_blocked","reason":"invalid_json"}')
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    event_id = raw_data.get("id", "unknown")
+    event_type = raw_data.get("event_type", "unknown")
+
+    logger.info(
+        '{"event":"paypal_webhook_received","type":"%s","id":"%s"}',
+        event_type, event_id,
+    )
+
+    # Idempotency (Redis atomic dedup)
+    is_new = await check_and_mark_processed(f"paypal:{event_id}", ttl=86400)
+    if not is_new:
+        logger.info(
+            '{"event":"paypal_webhook_duplicate","type":"%s","id":"%s"}',
+            event_type, event_id,
+        )
+        return {"received": True, "id": event_id, "status": "duplicate"}
+
+    # Verify webhook signature
+    from app.services.paypal_provider import PayPalProvider
+    provider = PayPalProvider()
+    is_valid = await provider.verify_callback(raw_data, headers_dict)
+    if not is_valid:
+        logger.warning(
+            '{"event":"paypal_webhook_blocked","reason":"invalid_signature","id":"%s"}',
+            event_id,
+        )
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    # Route event type
+    resource = raw_data.get("resource", {})
+
+    if event_type == "PAYMENT.CAPTURE.COMPLETED":
+        from app.models.payment import Payment
+        capture_id = resource.get("id")
+        if capture_id:
+            result = await db.execute(
+                select(Payment).where(Payment.stripe_payment_intent_id == capture_id)
+            )
+            payment = result.scalar_one_or_none()
+            if payment:
+                payment.status = PaymentStatus.completed
+                await db.commit()
+                logger.info(
+                    '{"event":"paypal_payment_completed","capture":"%s","payment_id":%d}',
+                    capture_id, payment.id,
+                )
+                asyncio.create_task(_bg_emit_event_after_payment(payment))
+        else:
+            logger.info(
+                '{"event":"paypal_payment_completed","resource":"%s"}',
+                resource.get("id"),
+            )
+
+    elif event_type == "PAYMENT.CAPTURE.DENIED":
+        logger.info(
+            '{"event":"paypal_payment_denied","capture":"%s"}',
+            resource.get("id"),
+        )
+
+    elif event_type == "PAYMENT.CAPTURE.REFUNDED":
+        logger.info(
+            '{"event":"paypal_payment_refunded","capture":"%s"}',
+            resource.get("id"),
+        )
+
+    else:
+        logger.info(
+            '{"event":"paypal_webhook_unhandled","type":"%s","id":"%s"}',
+            event_type, event_id,
+        )
+
+    return {"received": True, "id": event_id}
+
+
+# ── Airtel Money Callback ────────────────────────────────────────────────────────
+
+
+@router.post("/airtel/callback")
+async def airtel_callback(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Airtel Money callback endpoint.
+
+    Triggered by Airtel after a push payment is completed or fails.
+    Verifies HMAC signature if provided.
+    Idempotent via Redis deduplication (airtel:{transaction_id}).
+    """
+    import json as _json
+
+    payload = await request.body()
+    headers_dict = {k: v for k, v in request.headers.items()}
+
+    try:
+        raw_data = _json.loads(payload.decode())
+    except Exception:
+        logger.warning('{"event":"airtel_callback_blocked","reason":"invalid_json"}')
+        return {"status_code": "200", "status_message": "Accepted"}
+
+    transaction = raw_data.get("transaction", {})
+    transaction_id = transaction.get("id", raw_data.get("airtel_money_request_id", "unknown"))
+
+    logger.info(
+        '{"event":"airtel_callback_received","transaction_id":"%s"}',
+        transaction_id,
+    )
+
+    # Idempotency (Redis atomic dedup)
+    is_new = await check_and_mark_processed(f"airtel:{transaction_id}", ttl=86400)
+    if not is_new:
+        logger.info(
+            '{"event":"airtel_callback_duplicate","transaction_id":"%s"}',
+            transaction_id,
+        )
+        # Airtel expects 200 response
+        return {"status_code": "200", "status_message": "Accepted"}
+
+    # Verify HMAC signature
+    from app.services.airtel_money_provider import AirtelMoneyProvider
+    provider = AirtelMoneyProvider()
+    is_valid = await provider.verify_callback(raw_data, headers_dict)
+    if not is_valid:
+        logger.warning(
+            '{"event":"airtel_callback_blocked","reason":"invalid_signature","transaction_id":"%s"}',
+            transaction_id,
+        )
+        return {"status_code": "200", "status_message": "Accepted"}
+
+    # Process payment
+    status_code = raw_data.get("status", {}).get("code", "")
+    if status_code in ("200", "TS"):
+        from app.models.payment import Payment
+        result = await db.execute(
+            select(Payment).where(Payment.reference == transaction_id)
+        )
+        payment = result.scalar_one_or_none()
+        if payment:
+            payment.status = PaymentStatus.completed
+            await db.commit()
+            logger.info(
+                '{"event":"airtel_payment_completed","transaction_id":"%s","payment_id":%d}',
+                transaction_id, payment.id,
+            )
+            asyncio.create_task(_bg_emit_event_after_payment(payment))
+
+    elif status_code in ("404", "500", "FAILED", "TF"):
+        from app.models.payment import Payment
+        result = await db.execute(
+            select(Payment).where(Payment.reference == transaction_id)
+        )
+        payment = result.scalar_one_or_none()
+        if payment:
+            payment.status = PaymentStatus.failed
+            payment.error_message = raw_data.get("status", {}).get("message", "Airtel payment failed")
+            await db.commit()
+
+    # Airtel requires a specific response format
+    return {"status_code": "200", "status_message": "Accepted"}
 
 
 # ── Stripe Webhook ──────────────────────────────────────────────────────────────

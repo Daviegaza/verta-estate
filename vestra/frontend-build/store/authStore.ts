@@ -8,6 +8,7 @@ import api from '@/lib/api';
 interface AuthState {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   isHydrated: boolean;
@@ -28,11 +29,11 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       token: null,
+      refreshToken: null,
       isLoading: false,
       isAuthenticated: false,
       isHydrated: false,
       lastVerifiedAt: null,
-
       setHydrated: () => set({ isHydrated: true }),
 
       login: async (email, password) => {
@@ -40,9 +41,11 @@ export const useAuthStore = create<AuthState>()(
         try {
           const data = await api.login(email, password);
           localStorage.setItem('vestra_token', data.access_token);
+          localStorage.setItem('vestra_refresh_token', data.refresh_token);
           set({
             user: data.user,
             token: data.access_token,
+            refreshToken: data.refresh_token,
             isAuthenticated: true,
             isLoading: false,
             lastVerifiedAt: Date.now(),
@@ -58,9 +61,11 @@ export const useAuthStore = create<AuthState>()(
         try {
           const data = await api.register(userData);
           localStorage.setItem('vestra_token', data.access_token);
+          localStorage.setItem('vestra_refresh_token', data.refresh_token);
           set({
             user: data.user,
             token: data.access_token,
+            refreshToken: data.refresh_token,
             isAuthenticated: true,
             isLoading: false,
             lastVerifiedAt: Date.now(),
@@ -73,8 +78,9 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         localStorage.removeItem('vestra_token');
+        localStorage.removeItem('vestra_refresh_token');
         localStorage.removeItem('vestra_user');
-        set({ user: null, token: null, isAuthenticated: false });
+        set({ user: null, token: null, refreshToken: null, isAuthenticated: false });
       },
 
       refreshUser: async () => {
@@ -93,11 +99,16 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         user: state.user,
         token: state.token,
+        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
       onRehydrateStorage: () => (state) => {
         // Mark as hydrated after Zustand loads persisted state
         state?.setHydrated();
+        // Ensure refreshToken is synced to localStorage
+        if (state?.refreshToken && typeof window !== 'undefined') {
+          localStorage.setItem('vestra_refresh_token', state.refreshToken);
+        }
       },
     }
   )

@@ -171,7 +171,7 @@ function MarketContent() {
             </div>
             <button
               type="button"
-              onClick={() => setUseAi(!useAi)}
+              onClick={() => { setUseAi(!useAi); setProperties([]); setLoading(true); }}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${
                 useAi ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-400'
               }`}

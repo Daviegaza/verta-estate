@@ -215,7 +215,7 @@ async def record_rent(
 
 # ── Maintenance ───────────────────────────────────────────────────────────────
 
-@router.post("/maintenance")
+@router.post("/maintenance/report")
 async def report_maintenance(
     unit_id: int = Query(...),
     title: str = Query(...),

@@ -80,6 +80,7 @@ class EscrowTransaction(Base):
     amount_kes = Column(Numeric(12, 2), nullable=False)
     deposit_amount_kes = Column(Numeric(12, 2), nullable=True)
     status = Column(Enum(EscrowStatus), default=EscrowStatus.initiated, nullable=False)
+    deposit_reference = Column(String(255), nullable=True)
     payment_reference = Column(String(255), nullable=True)
     release_condition_met = Column(Boolean, default=False)
     completion_date = Column(DateTime(timezone=True), nullable=True)

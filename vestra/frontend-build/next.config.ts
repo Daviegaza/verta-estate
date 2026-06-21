@@ -29,6 +29,55 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+
+  // ── Security Headers ──────────────────────────────────────────────────────────
+  async headers() {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const imageDomains = [
+      'https://vestra.co.ke',
+      'https://*.vestra.co.ke',
+      'https://images.unsplash.com',
+      'https://res.cloudinary.com',
+      'http://localhost',
+      'https://*.fly.dev',
+    ];
+
+    const csp = [
+      `default-src 'self'`,
+      `script-src 'self' 'unsafe-eval' 'unsafe-inline'`,
+      `style-src 'self' 'unsafe-inline'`,
+      `img-src 'self' data: blob: ${imageDomains.join(' ')}`,
+      `font-src 'self' data:`,
+      `connect-src 'self' ${apiUrl}`,
+      `frame-ancestors 'none'`,
+      `base-uri 'self'`,
+      `form-action 'self'`,
+    ].join('; ');
+
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'Content-Security-Policy', value: csp },
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=31536000; includeSubDomains',
+          },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          {
+            key: 'Permissions-Policy',
+            value:
+              'camera=(), microphone=(), geolocation=self, payment=self',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

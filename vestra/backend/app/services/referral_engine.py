@@ -156,7 +156,8 @@ async def track_referral_verified(db: AsyncSession, user_id: int) -> Optional[di
         return None
 
     referral.status = "active"
-    referral.rewards_earned = (referral.rewards_earned or 0) + 0  # status update only
+    referral.rewards_earned = (referral.rewards_earned or 0)
+    referral.converted_at = datetime.now(timezone.utc)
     await db.commit()
 
     logger.info('{"event":"referral_verified","referrer":%d,"referred":%d}', referral.referrer_id, user_id)

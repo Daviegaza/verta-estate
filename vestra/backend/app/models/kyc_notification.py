@@ -3,7 +3,7 @@ KYC (Know Your Customer) models — identity verification for all platform users
 Required for agents, landlords, and for high-value transactions.
 """
 import enum
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Text, JSON, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Text, JSON, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -104,8 +104,7 @@ class SavedProperty(Base):
     property = relationship("Property")
 
     __table_args__ = (
-        # One save per user per property
-        {"sqlite_autoincrement": True},
+        UniqueConstraint('user_id', 'property_id', name='uq_saved_property_user_property'),
     )
 
 

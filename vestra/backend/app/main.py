@@ -53,6 +53,7 @@ from app.core.middleware import (
     GzipCompressionMiddleware,
     RequestSizeLimitMiddleware,
 )
+from app.core.csrf import CSRFMiddleware
 from app.core.indexes import create_performance_indexes
 from app.api import api_router, legacy_router
 
@@ -91,7 +92,8 @@ async def lifespan(app: FastAPI):
             traces_sample_rate=(
                 settings.SENTRY_TRACES_SAMPLE_RATE
                 if settings.ENVIRONMENT == "production"
-                else 1.0
+                else 0.5 if settings.ENVIRONMENT == "staging"
+                else 0.0  # No tracing in development
             ),
             profiles_sample_rate=0.1,
         )
@@ -134,22 +136,25 @@ app = FastAPI(
 # 1. Security headers (outermost)
 app.add_middleware(SecurityHeadersMiddleware)
 
-# 2. Request size limit
+# 2. CSRF protection (double-submit cookie pattern)
+app.add_middleware(CSRFMiddleware)
+
+# 3. Request size limit
 app.add_middleware(RequestSizeLimitMiddleware)
 
-# 3. Rate limiting (Redis-backed)
+# 4. Rate limiting (Redis-backed)
 app.add_middleware(RateLimitMiddleware)
 
-# 4. Compression
+# 5. Compression
 app.add_middleware(GzipCompressionMiddleware)
 
-# 5. Prometheus metrics tracking
+# 6. Prometheus metrics tracking
 app.middleware("http")(metrics_middleware)
 
-# 6. Structured request logging
+# 7. Structured request logging
 app.add_middleware(RequestLoggingMiddleware)
 
-# 7. CORS
+# 8. CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,

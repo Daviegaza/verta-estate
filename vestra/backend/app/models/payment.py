@@ -17,6 +17,9 @@ class PaymentMethod(str, enum.Enum):
     mpesa = "mpesa"
     stripe = "stripe"
     bank_transfer = "bank_transfer"
+    paypal = "paypal"
+    airtel_money = "airtel_money"
+    crypto = "crypto"
 
 
 class PaymentPurpose(str, enum.Enum):

@@ -1,11 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { Spinner } from '@/components/ui/card';
 import { ShieldAlert, Lock, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
+import { useToast } from '@/components/ui/toaster';
+
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const WARNING_BEFORE_MS = 60 * 1000;            // 1 minute warning
+const WARNING_AT_MS = INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_MS; // 29 minutes
 
 interface Props {
   children: React.ReactNode;
@@ -45,6 +50,9 @@ export default function AuthGuard({
   const [serverUser, setServerUser] = useState<any>(null);
   const [blocked, setBlocked] = useState(false);
   const [blockReason, setBlockReason] = useState('');
+  const toast = useToast();
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // Layer 1: Wait for Zustand to hydrate from localStorage
@@ -105,6 +113,52 @@ export default function AuthGuard({
         }
       });
   }, [isHydrated, isAuthenticated, token, pathname]);
+
+  // ── Inactivity Auto-Logout ─────────────────────────────────────────────────
+  // Only active when the user is verified on an auth-required page
+  useEffect(() => {
+    if (!verified || (!requireAuth && !requireAdmin && !requireRoles)) return;
+
+    const clearTimers = () => {
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    };
+
+    const handleLogout = () => {
+      clearTimers();
+      logout();
+      toast.warning(
+        'Session expired',
+        'You were logged out due to inactivity.'
+      );
+      router.replace('/auth/login?redirect=' + encodeURIComponent(pathname));
+    };
+
+    const handleWarning = () => {
+      toast.warning(
+        'Session expiring soon',
+        'You will be logged out in 1 minute due to inactivity.'
+      );
+    };
+
+    const resetInactivityTimer = () => {
+      clearTimers();
+      warningTimerRef.current = setTimeout(handleWarning, WARNING_AT_MS);
+      inactivityTimerRef.current = setTimeout(handleLogout, INACTIVITY_TIMEOUT_MS);
+    };
+
+    // Set up event listeners for user activity
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach((event) => window.addEventListener(event, resetInactivityTimer));
+
+    // Start the timer
+    resetInactivityTimer();
+
+    return () => {
+      clearTimers();
+      events.forEach((event) => window.removeEventListener(event, resetInactivityTimer));
+    };
+  }, [verified, requireAuth, requireAdmin, requireRoles]);
 
   // ── Access check helper (used both for cached and fresh verification) ─────
   function checkAccess(serverVerifiedUser: any, requireAdmin?: boolean, requireRoles?: string[]): boolean {

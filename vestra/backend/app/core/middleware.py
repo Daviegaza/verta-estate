@@ -199,23 +199,35 @@ class GzipCompressionMiddleware(BaseHTTPMiddleware):
         if not is_compressible or isinstance(response, StreamingResponse):
             return response
 
+        # Safely extract response body
         body = b""
-        if hasattr(response, "body"):
-            body = response.body
-            if isinstance(body, memoryview):
-                body = bytes(body)
-            elif isinstance(body, str):
-                body = body.encode("utf-8")
+        try:
+            if hasattr(response, "body"):
+                raw = response.body
+                if isinstance(raw, memoryview):
+                    body = bytes(raw)
+                elif isinstance(raw, str):
+                    body = raw.encode("utf-8")
+                elif isinstance(raw, (bytes, bytearray)):
+                    body = bytes(raw)
+        except Exception:
+            pass  # Cannot read body, skip compression
 
         if len(body) < 1024:
             return response
 
         compressed = gzip.compress(body, compresslevel=6)
-        response.body = compressed
-        response.headers["Content-Encoding"] = "gzip"
-        response.headers["Content-Length"] = str(len(compressed))
-        response.headers["Vary"] = "Accept-Encoding"
-        return response
+        # Build a new response to avoid mutating internal state
+        return Response(
+            content=compressed,
+            status_code=response.status_code,
+            headers={
+                **{k: v for k, v in response.headers.items() if k.lower() != "content-length"},
+                "Content-Encoding": "gzip",
+                "Content-Length": str(len(compressed)),
+                "Vary": "Accept-Encoding",
+            },
+        )
 
 
 # ── Request Size Limiter ───────────────────────────────────────────────────────

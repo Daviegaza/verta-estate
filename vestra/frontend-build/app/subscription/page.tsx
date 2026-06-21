@@ -96,11 +96,20 @@ function SubscriptionContent() {
     }
   };
 
+  const validatePhone = (phone: string): boolean => {
+    return /^254\d{9}$/.test(phone);
+  };
+
   const handleSubscribe = async (tier: string, price: number) => {
+    if (!phoneNumber || !validatePhone(phoneNumber)) {
+      setError('Please enter a valid M-Pesa phone number (e.g., 254712345678) — must start with 254 and be 12 digits');
+      return;
+    }
+
     if (tier === 'free') {
       try {
         setSubscribing(tier);
-        await api.client.post(`/api/subscriptions/subscribe?tier=free&phone_number=${phoneNumber || '254700000000'}`);
+        await api.client.post(`/api/subscriptions/subscribe?tier=free&phone_number=${encodeURIComponent(phoneNumber)}`);
         setMessage('Free plan activated!');
         setTimeout(() => loadPlans(), 1000);
       } catch (err: any) {
@@ -108,11 +117,6 @@ function SubscriptionContent() {
       } finally {
         setSubscribing(null);
       }
-      return;
-    }
-
-    if (!phoneNumber || phoneNumber.length < 10) {
-      setError('Please enter your M-Pesa phone number (e.g., 254712345678)');
       return;
     }
 

@@ -39,6 +39,11 @@ async function withRetry<T>(fn: () => Promise<T>, attempt = 0): Promise<T> {
 
 class VestraAPIClient {
   client: AxiosInstance;
+  private isRefreshing = false;
+  private failedQueue: Array<{
+    resolve: (token: string) => void;
+    reject: (error: any) => void;
+  }> = [];
 
   constructor() {
     this.client = axios.create({
@@ -62,42 +67,123 @@ class VestraAPIClient {
       return config;
     });
 
-    // Response interceptor — handles expired tokens gracefully
+    // Response interceptor — handles expired tokens gracefully with refresh
     // Amazon-style: never force-redirect on public pages. Just clear stale tokens
     // and let individual page guards handle auth requirements.
+    // Also handles automatic refresh token rotation on 401.
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
-        if (error.response?.status === 401) {
-          if (typeof window !== 'undefined') {
-            // Only force-redirect if user is on an explicitly auth-required path
-            // Public pages (/, /market, /verify, etc.) should never redirect
-            const path = window.location.pathname;
-            const isAuthRequiredPath =
-              path.startsWith('/account') ||
-              path.startsWith('/dashboard') ||
-              path.startsWith('/admin') ||
-              path.startsWith('/properties/new') ||
-              path.startsWith('/properties/edit') ||
-              path.startsWith('/properties/my') ||
-              path.startsWith('/messages') ||
-              path.startsWith('/subscription') ||
-              path.startsWith('/agents');
-
-            // Clear stale auth data silently
-            localStorage.removeItem('vestra_token');
-            localStorage.removeItem('vestra_user');
-
-            // Only redirect if AuthGuard would have required login anyway
-            if (isAuthRequiredPath) {
-              window.location.href = '/auth/login?redirect=' + encodeURIComponent(path);
-            }
-            // On public pages: just clear token, stay on page, let user browse freely
-          }
+        if (error.response?.status !== 401) {
+          return Promise.reject(error);
         }
-        return Promise.reject(error);
+
+        const originalRequest = error.config as any;
+
+        // Don't retry the refresh endpoint itself
+        if (originalRequest.url?.includes('/api/auth/refresh')) {
+          // Clear auth and redirect
+          this.clearAuthAndRedirect(originalRequest);
+          return Promise.reject(error);
+        }
+
+        // If already refreshing, queue this request
+        if (this.isRefreshing) {
+          return new Promise<string>((resolve, reject) => {
+            this.failedQueue.push({ resolve, reject });
+          }).then((newToken) => {
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return this.client(originalRequest);
+          });
+        }
+
+        // Prevent infinite retry loops
+        if (originalRequest._retry) {
+          this.clearAuthAndRedirect(originalRequest);
+          return Promise.reject(error);
+        }
+
+        originalRequest._retry = true;
+        this.isRefreshing = true;
+
+        const refreshToken =
+          typeof window !== 'undefined'
+            ? localStorage.getItem('vestra_refresh_token')
+            : null;
+
+        if (!refreshToken) {
+          // No refresh token available — fall through to original 401 handling
+          this.isRefreshing = false;
+          this.clearAuthAndRedirect(originalRequest);
+          return Promise.reject(error);
+        }
+
+        // Attempt to refresh the token
+        return api
+          .refreshToken(refreshToken)
+          .then((data) => {
+            // Store new tokens
+            localStorage.setItem('vestra_token', data.access_token);
+            localStorage.setItem('vestra_refresh_token', data.refresh_token);
+
+            // Process any queued requests with the new token
+            this.processQueue(null, data.access_token);
+
+            // Retry the original request with the new token
+            originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
+            return this.client(originalRequest);
+          })
+          .catch((refreshError) => {
+            // Refresh failed — reject all queued requests and force logout
+            this.processQueue(refreshError, null);
+            this.clearAuthAndRedirect(originalRequest);
+            return Promise.reject(refreshError);
+          })
+          .finally(() => {
+            this.isRefreshing = false;
+          });
       }
     );
+  }
+
+  private processQueue(error: any, token: string | null = null): void {
+    this.failedQueue.forEach(({ resolve, reject }) => {
+      if (error) {
+        reject(error);
+      } else if (token) {
+        resolve(token);
+      }
+    });
+    this.failedQueue = [];
+  }
+
+  private clearAuthAndRedirect(originalRequest?: any): void {
+    if (typeof window === 'undefined') return;
+
+    // Only force-redirect if user is on an explicitly auth-required path
+    // Public pages (/, /market, /verify, etc.) should never redirect
+    const path = window.location.pathname;
+    const isAuthRequiredPath =
+      path.startsWith('/account') ||
+      path.startsWith('/dashboard') ||
+      path.startsWith('/admin') ||
+      path.startsWith('/properties/new') ||
+      path.startsWith('/properties/edit') ||
+      path.startsWith('/properties/my') ||
+      path.startsWith('/messages') ||
+      path.startsWith('/subscription') ||
+      path.startsWith('/agents');
+
+    // Clear stale auth data silently
+    localStorage.removeItem('vestra_token');
+    localStorage.removeItem('vestra_refresh_token');
+    localStorage.removeItem('vestra_user');
+
+    // Only redirect if AuthGuard would have required login anyway
+    if (isAuthRequiredPath) {
+      window.location.href = '/auth/login?redirect=' + encodeURIComponent(path);
+    }
+    // On public pages: just clear token, stay on page, let user browse freely
   }
 
   // ─── Auth ──────────────────────────────────────────────────────────────────

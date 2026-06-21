@@ -1,16 +1,21 @@
 """
-Authentication routes — register, login, password reset, email verification.
+Authentication routes — register, login, password reset, email verification,
+TOTP 2FA, session management, and GDPR compliance.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pyotp
+import qrcode
 from jose import JWTError, jwt
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +25,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.core.security import (
     create_access_token, create_refresh_token, get_current_user,
+    get_current_user_optional,
     get_password_hash, verify_password,
     validate_password_strength,
 )
@@ -82,6 +88,22 @@ async def register(
     user = await create_user(db, user_data, referral_code=user_data.referral_code)
     client_ip = request.client.host if request.client else None
     token = create_access_token({"sub": str(user.id)}, client_ip=client_ip)
+    refresh_token_str, refresh_jti = create_refresh_token({"sub": str(user.id)}, client_ip=client_ip)
+
+    # Store refresh token in Redis
+    asyncio.create_task(
+        store_refresh_token(user.id, refresh_jti, ttl=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
+    )
+
+    # Store session metadata
+    asyncio.create_task(
+        _store_session_metadata(
+            user_id=user.id,
+            jti=refresh_jti,
+            request=request,
+            client_ip=client_ip,
+        )
+    )
 
     # Send verification email in background
     verify_token = secrets.token_urlsafe(32)
@@ -102,14 +124,24 @@ async def register(
         _bg_send_welcome_notification(user.id, user.full_name)
     )
 
-    return Token(access_token=token, user=UserResponse.model_validate(user))
+    return Token(
+        access_token=token,
+        refresh_token=refresh_token_str,
+        user=UserResponse.model_validate(user),
+    )
 
 
 # ── Login ──────────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=Token)
 async def login(form_data: UserLogin, request: Request, db: AsyncSession = Depends(get_db)):
-    """Login with email and password. Token is IP-bound for security."""
+    """Login with email and password. Token is IP-bound for security.
+
+    If the user has two-factor authentication enabled, this endpoint returns
+    a partial login response with ``{"2fa_required": true}`` and the caller
+    must complete authentication via ``POST /auth/2fa/verify`` with the
+    ``temp_token`` and the TOTP code.
+    """
     client_ip = request.client.host if request.client else "unknown"
     lockout_key = f"vestra:lockout:{form_data.email}:{client_ip}"
 
@@ -163,11 +195,50 @@ async def login(form_data: UserLogin, request: Request, db: AsyncSession = Depen
                 detail="Please verify your email address before logging in. Check your inbox.",
             )
 
+    # ── Two-factor authentication check ───────────────────────────────────
+    if user.two_factor_enabled:
+        # Generate a short-lived temporary token to prove password check passed
+        temp_token = secrets.token_urlsafe(32)
+        temp_ttl = 300  # 5 minutes
+        await cache_set(
+            f"vestra:2fa_temp:{temp_token}",
+            {"user_id": user.id, "client_ip": client_ip},
+            ttl=temp_ttl,
+        )
+        return {
+            "2fa_required": True,
+            "temp_token": temp_token,
+            "message": "Two-factor authentication is enabled. Please provide your TOTP code.",
+            "expires_in": temp_ttl,
+        }
+
     # ── Reset lockout counter on successful login ──────────────────────────
     if r is not None:
         await r.delete(f"{lockout_key}:count")
 
     token = create_access_token({"sub": str(user.id)}, client_ip=client_ip)
+    refresh_token_str, refresh_jti = create_refresh_token({"sub": str(user.id)}, client_ip=client_ip)
+
+    # Store refresh token in Redis
+    asyncio.create_task(
+        store_refresh_token(user.id, refresh_jti, ttl=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
+    )
+
+    # Store session metadata
+    asyncio.create_task(
+        _store_session_metadata(
+            user_id=user.id,
+            jti=refresh_jti,
+            request=request,
+            client_ip=client_ip,
+        )
+    )
+
+    # Enforce max concurrent sessions
+    asyncio.create_task(
+        _enforce_max_sessions(user.id)
+    )
+
     # ── Fire-and-forget: track login event ─────────────────────────────
     asyncio.create_task(
         fire_and_forget_track_user_event(
@@ -176,7 +247,11 @@ async def login(form_data: UserLogin, request: Request, db: AsyncSession = Depen
             event_data={"email": user.email, "role": user.role.value if user.role else "buyer"},
         )
     )
-    return Token(access_token=token, user=UserResponse.model_validate(user))
+    return Token(
+        access_token=token,
+        refresh_token=refresh_token_str,
+        user=UserResponse.model_validate(user),
+    )
 
 
 # ── OAuth2 form login (for Swagger UI) ─────────────────────────────────────────
@@ -428,12 +503,23 @@ async def refresh_token(
     new_access_token = create_access_token({"sub": str(user_id_int)}, client_ip=client_ip)
     new_refresh_token, new_jti = create_refresh_token({"sub": str(user_id_int)}, client_ip=client_ip)
 
-    # Revoke old refresh token, store the new one
+    # Revoke old refresh token + session metadata, store the new one
     r = await get_redis()
     if r is not None:
         await r.delete(f"vestra:refresh:{user_id_int}:{jti}")
+        await r.delete(f"vestra:session:{user_id_int}:{jti}")
     refresh_ttl = settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
     await store_refresh_token(user_id_int, new_jti, ttl=refresh_ttl)
+
+    # Store new session metadata
+    asyncio.create_task(
+        _store_session_metadata(
+            user_id=user_id_int,
+            jti=new_jti,
+            request=request,
+            client_ip=client_ip,
+        )
+    )
 
     return TokenRefreshResponse(
         access_token=new_access_token,
@@ -446,11 +532,473 @@ async def refresh_token(
 @router.post("/logout")
 async def logout(current_user=Depends(get_current_user)):
     """
-    Logout the current user by revoking all their refresh tokens.
+    Logout the current user by revoking all their refresh tokens
+    and removing session metadata.
     The current access token will expire naturally (1h TTL).
     """
     await revoke_all_refresh_tokens(current_user.id)
+    await cache_delete(f"vestra:session:{current_user.id}:*")
     return {"message": "Logged out successfully"}
+
+
+# ── 2FA ────────────────────────────────────────────────────────────────────────
+
+
+@router.post("/2fa/setup")
+async def setup_2fa(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a TOTP secret and return a provisioning URI + QR code data URL.
+
+    The user should scan the QR code into their authenticator app (Google
+    Authenticator, Authy, etc.) and then call ``/2fa/verify`` to confirm.
+    """
+    if current_user.two_factor_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is already enabled. Disable it first to re-setup.",
+        )
+
+    # Generate a new TOTP secret
+    totp_secret = pyotp.random_base32()
+    issuer = settings.APP_NAME
+    provisioning_uri = pyotp.totp.TOTP(totp_secret).provisioning_uri(
+        name=current_user.email,
+        issuer_name=issuer,
+    )
+
+    # Generate QR code as a base64 data URL
+    qr = qrcode.QRCode(box_size=8, border=2)
+    qr.add_data(provisioning_uri)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    qr_data_url = f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"
+
+    # Persist the secret so the next /2fa/verify call can validate
+    current_user.totp_secret = totp_secret
+    await db.commit()
+
+    return {
+        "secret": totp_secret,
+        "provisioning_uri": provisioning_uri,
+        "qr_code": qr_data_url,
+        "message": "Scan the QR code with your authenticator app, then call /auth/2fa/verify to confirm.",
+    }
+
+
+@router.post("/2fa/verify")
+async def verify_2fa(
+    totp_code: str = Query(..., description="6-digit TOTP code from authenticator app"),
+    temp_token: str = Query(None, description="Temp token from login when 2fa_required=true"),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    """Verify a TOTP code to enable 2FA, or to complete a 2FA login step.
+
+    Two modes:
+      1. **Authenticated setup** — The user is already logged in and wants
+         to enable 2FA. Pass only ``totp_code``.
+      2. **Login completion** — The user has ``2fa_required`` from ``/login``
+         and must pass both ``totp_code`` and the ``temp_token`` from the
+         login response to receive their JWT tokens.
+    """
+    if temp_token:
+        # ── Login completion mode ──────────────────────────────────────────
+        temp_data = await cache_get(f"vestra:2fa_temp:{temp_token}")
+        if not temp_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "error": "temp_token_expired",
+                    "message": "The temporary login token has expired. Please log in again.",
+                },
+            )
+
+        user_id = temp_data.get("user_id")
+        client_ip = temp_data.get("client_ip", "unknown")
+
+        # Fetch the user fresh from DB to get the TOTP secret
+        user = await get_user_by_id(db, user_id)
+        if not user or not user.two_factor_enabled or not user.totp_secret:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Two-factor authentication is not configured for this account.",
+            )
+
+        # Verify TOTP code
+        totp = pyotp.TOTP(user.totp_secret)
+        if not totp.verify(totp_code, valid_window=1):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "error": "invalid_totp",
+                    "message": "Invalid TOTP code. Please try again.",
+                },
+            )
+
+        # Consume the temp token so it cannot be replayed
+        await cache_delete(f"vestra:2fa_temp:{temp_token}")
+
+        # Issue real tokens
+        token = create_access_token({"sub": str(user.id)}, client_ip=client_ip)
+        refresh_token_str, refresh_jti = create_refresh_token({"sub": str(user.id)}, client_ip=client_ip)
+
+        asyncio.create_task(
+            store_refresh_token(user.id, refresh_jti, ttl=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
+        )
+        asyncio.create_task(
+            _store_session_metadata(
+                user_id=user.id, jti=refresh_jti, request=request, client_ip=client_ip,
+            )
+        )
+
+        return Token(
+            access_token=token,
+            refresh_token=refresh_token_str,
+            user=UserResponse.model_validate(user),
+        )
+
+    # ── Setup completion mode (user must be authenticated) ─────────────────
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error": "authentication_required",
+                "message": "You must be logged in to enable two-factor authentication. "
+                           "Or provide a temp_token to complete a 2FA login step.",
+            },
+        )
+
+    if not current_user.totp_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No TOTP secret found. Call /auth/2fa/setup first.",
+        )
+
+    totp = pyotp.TOTP(current_user.totp_secret)
+    if not totp.verify(totp_code, valid_window=1):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid TOTP code. Please try again.",
+        )
+
+    current_user.two_factor_enabled = True
+    await db.commit()
+
+    return {
+        "message": "Two-factor authentication has been enabled successfully.",
+        "two_factor_enabled": True,
+    }
+
+
+@router.post("/2fa/disable")
+async def disable_2fa(
+    password: str = Query(..., description="Current password to confirm identity"),
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Disable two-factor authentication. Requires the current password."""
+    if not await verify_password(password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect password. Please try again.",
+        )
+
+    current_user.totp_secret = None
+    current_user.two_factor_enabled = False
+    await db.commit()
+
+    return {
+        "message": "Two-factor authentication has been disabled.",
+        "two_factor_enabled": False,
+    }
+
+
+# ── Sessions ──────────────────────────────────────────────────────────────────
+
+@router.get("/sessions")
+async def list_sessions(
+    current_user=Depends(get_current_user),
+):
+    """List all active sessions for the current user."""
+    r = await get_redis()
+    if r is None:
+        return {"sessions": [], "message": "Session store unavailable."}
+
+    cursor = 0
+    sessions = []
+    while True:
+        cursor, keys = await r.scan(cursor, match=f"vestra:session:{current_user.id}:*", count=100)
+        for key in keys:
+            data = await r.hgetall(key)
+            if data:
+                session_id = key.split(":")[-1]
+                sessions.append({
+                    "id": session_id,
+                    "device": data.get("device", "Unknown"),
+                    "ip": data.get("ip", ""),
+                    "user_agent": data.get("user_agent", ""),
+                    "created_at": data.get("created_at", ""),
+                    "current": False,  # Will be marked below
+                })
+        if cursor == 0:
+            break
+
+    # Mark the current session (based on the current JWT's jti — we can't
+    # extract it from the access token, so we leave it to the client to
+    # identify or simply sort by recency)
+    sessions.sort(key=lambda s: s["created_at"], reverse=True)
+    return {"sessions": sessions, "total": len(sessions)}
+
+
+@router.delete("/sessions/{session_id}")
+async def revoke_session(
+    session_id: str,
+    current_user=Depends(get_current_user),
+):
+    """Revoke a specific session by its ID (JTI from the refresh token)."""
+    r = await get_redis()
+    if r is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Session store unavailable.",
+        )
+
+    # Remove the refresh token and session metadata
+    refresh_key = f"vestra:refresh:{current_user.id}:{session_id}"
+    session_key = f"vestra:session:{current_user.id}:{session_id}"
+
+    deleted = await r.delete(refresh_key)
+    await r.delete(session_key)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found.",
+        )
+
+    return {"message": "Session revoked successfully."}
+
+
+# ── GDPR Compliance ───────────────────────────────────────────────────────────
+
+@router.get("/user/export")
+async def export_user_data(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export all personal data for the current user (GDPR Article 15)."""
+    from app.models.property import Property
+    from app.models.payment import Payment
+
+    # Gather user data
+    user_data = {
+        "id": current_user.id,
+        "email": current_user.email,
+        "phone": current_user.phone,  # Auto-decrypted via property
+        "full_name": current_user.full_name,
+        "role": current_user.role.value if current_user.role else None,
+        "is_active": current_user.is_active,
+        "is_verified": current_user.is_verified,
+        "is_kyc_verified": current_user.is_kyc_verified,
+        "avatar_url": current_user.avatar_url,
+        "bio": current_user.bio,
+        "location": current_user.location,
+        "national_id": current_user.national_id,  # Auto-decrypted via property
+        "referral_code": current_user.referral_code,
+        "two_factor_enabled": current_user.two_factor_enabled,
+        "consent_marketing": current_user.consent_marketing,
+        "consent_data_processing": current_user.consent_data_processing,
+        "consent_date": str(current_user.consent_date) if current_user.consent_date else None,
+        "created_at": str(current_user.created_at),
+        "updated_at": str(current_user.updated_at),
+    }
+
+    # Gather related data
+    properties_result = await db.execute(
+        __import__("sqlalchemy").select(Property).where(Property.owner_id == current_user.id)
+    )
+    properties = properties_result.scalars().all()
+    user_data["properties"] = [
+        {
+            "id": p.id,
+            "title": p.title,
+            "price": float(p.price) if p.price else None,
+            "status": p.status.value if p.status else None,
+            "created_at": str(p.created_at),
+        }
+        for p in properties
+    ]
+
+    payments_result = await db.execute(
+        __import__("sqlalchemy").select(Payment).where(Payment.user_id == current_user.id)
+    )
+    payments = payments_result.scalars().all()
+    user_data["payments"] = [
+        {
+            "id": p.id,
+            "amount": float(p.amount) if p.amount else None,
+            "status": p.status.value if p.status else None,
+            "method": p.method.value if p.method else None,
+            "created_at": str(p.created_at),
+        }
+        for p in payments
+    ]
+
+    return {
+        "export_date": datetime.now(timezone.utc).isoformat(),
+        "data": user_data,
+    }
+
+
+@router.delete("/user/data")
+async def delete_user_data(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Anonymize user data (GDPR Right to be Forgotten — Article 17).
+
+    This does NOT delete the user record (which would break referential
+    integrity with properties, payments, etc.). Instead, it replaces all
+    personally identifiable information with anonymised placeholders.
+    """
+    from app.models.user import UserRole
+
+    if current_user.role == UserRole.super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super admin accounts cannot be anonymized through this endpoint.",
+        )
+
+    anon_suffix = f"-deleted-{secrets.token_hex(4)}"
+
+    # Scrub PII fields
+    current_user.full_name = f"Deleted User {anon_suffix}"
+    current_user.email = f"deleted{anon_suffix}@vestra.co.ke"
+    current_user._phone = None  # Direct column access to avoid encryption
+    current_user._national_id = None
+    current_user.avatar_url = None
+    current_user.bio = None
+    current_user.location = None
+    current_user.is_active = False
+    current_user.is_verified = False
+    current_user.referral_code = None
+    current_user.totp_secret = None
+    current_user.two_factor_enabled = False
+    current_user.consent_marketing = False
+    current_user.consent_data_processing = False
+
+    await db.commit()
+
+    # Revoke all sessions
+    await revoke_all_refresh_tokens(current_user.id)
+    await cache_delete(f"vestra:session:{current_user.id}:*")
+
+    return {
+        "message": "Your personal data has been anonymized. You can no longer log in with this account.",
+        "anonymized": True,
+    }
+
+
+# ── Session helpers & background tasks ────────────────────────────────────────
+
+
+async def _store_session_metadata(
+    user_id: int,
+    jti: str,
+    request: Request,
+    client_ip: str | None,
+) -> None:
+    """Store session metadata in Redis for a newly-created token."""
+    r = await get_redis()
+    if r is None:
+        return
+
+    user_agent = request.headers.get("user-agent", "") if request else ""
+    # Derive a simple device label from the user-agent
+    device = _derive_device(user_agent)
+
+    session_key = f"vestra:session:{user_id}:{jti}"
+    ttl = settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
+
+    try:
+        await r.hset(session_key, mapping={
+            "device": device,
+            "ip": client_ip or "",
+            "user_agent": user_agent[:500],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        await r.expire(session_key, ttl)
+    except Exception:
+        logger.warning('{"event":"store_session_failed","user_id":%d}', user_id)
+
+
+async def _enforce_max_sessions(user_id: int) -> None:
+    """If the user exceeds MAX_CONCURRENT_SESSIONS, evict the oldest session."""
+    r = await get_redis()
+    if r is None:
+        return
+
+    max_sessions = settings.MAX_CONCURRENT_SESSIONS
+
+    cursor = 0
+    session_keys = []
+    while True:
+        cursor, keys = await r.scan(cursor, match=f"vestra:session:{user_id}:*", count=100)
+        session_keys.extend(keys)
+        if cursor == 0:
+            break
+
+    if len(session_keys) <= max_sessions:
+        return
+
+    # Sort by created_at (oldest first) and remove excess
+    sessions = []
+    for key in session_keys:
+        data = await r.hgetall(key)
+        created = data.get("created_at", "")
+        if created:
+            try:
+                dt = datetime.fromisoformat(created)
+            except ValueError:
+                dt = datetime.min.replace(tzinfo=timezone.utc)
+        else:
+            dt = datetime.min.replace(tzinfo=timezone.utc)
+        sessions.append((dt, key))
+
+    sessions.sort(key=lambda x: x[0])
+    # Evict oldest sessions beyond the limit
+    to_evict = sessions[:len(sessions) - max_sessions]
+    for _, key in to_evict:
+        jti = key.split(":")[-1]
+        await r.delete(f"vestra:refresh:{user_id}:{jti}")
+        await r.delete(key)
+
+
+def _derive_device(user_agent: str) -> str:
+    """Derive a friendly device name from the User-Agent string."""
+    ua = user_agent.lower()
+    if "mobile" in ua or "android" in ua or "iphone" in ua or "ipad" in ua:
+        if "android" in ua:
+            return "Android"
+        if "iphone" in ua or "ipad" in ua:
+            return "iOS"
+        return "Mobile"
+    if "windows" in ua:
+        return "Windows"
+    if "mac" in ua:
+        return "macOS"
+    if "linux" in ua:
+        return "Linux"
+    if "postman" in ua:
+        return "Postman"
+    if "curl" in ua:
+        return "CLI"
+    return "Unknown"
 
 
 # ── Background helpers ─────────────────────────────────────────────────────────

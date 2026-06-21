@@ -223,3 +223,41 @@ async def get_current_agent(
             detail="Agent account required",
         )
     return current_user
+
+
+async def get_current_user_optional(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Like ``get_current_user`` but returns ``None`` instead of raising 401
+    when no valid token is present. Useful for endpoints that work both
+    for authenticated and unauthenticated users (e.g., 2FA login completion).
+
+    Reads the Bearer token from the Authorization header manually to avoid
+    ``oauth2_scheme`` automatically raising 401 on missing tokens.
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header[len("Bearer "):].strip()
+    if not token:
+        return None
+
+    try:
+        payload = jwt.decode(
+            token, settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+        user_id: str = payload.get("sub")
+        token_type: str = payload.get("type", "")
+        if user_id is None or token_type != "access":
+            return None
+    except JWTError:
+        return None
+
+    from app.services.user_service import get_user_by_id
+    user = await get_user_by_id(db, int(user_id))
+    if user is None or not user.is_active:
+        return None
+    return user

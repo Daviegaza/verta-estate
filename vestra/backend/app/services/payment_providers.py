@@ -21,6 +21,8 @@ class ProviderType(str, Enum):
     mtn_momo = "mtn_momo"
     airtel_money = "airtel_money"
     bank_transfer = "bank_transfer"
+    paypal = "paypal"
+    crypto = "crypto"
 
 
 @dataclass
@@ -148,6 +150,26 @@ def list_available_providers() -> list[dict]:
         }
         for pt, cls in _provider_registry.items()
     ]
+
+
+def get_provider_by_method(method: str) -> Optional[PaymentProvider]:
+    """Resolve a provider by its method name string."""
+    method_map = {
+        "mpesa": ProviderType.mpesa_ke,
+        "mpesa_ke": ProviderType.mpesa_ke,
+        "mpesa_tz": ProviderType.mpesa_tz,
+        "stripe": ProviderType.stripe,
+        "flutterwave": ProviderType.flutterwave,
+        "mtn_momo": ProviderType.mtn_momo,
+        "airtel_money": ProviderType.airtel_money,
+        "bank_transfer": ProviderType.bank_transfer,
+        "paypal": ProviderType.paypal,
+        "crypto": ProviderType.crypto,
+    }
+    pt = method_map.get(method.lower())
+    if pt is None:
+        return None
+    return get_provider(pt)
 
 
 # ── Built-in providers are registered in their respective service files ───────

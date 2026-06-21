@@ -67,7 +67,8 @@ function MessagesContent() {
     setActiveConv(otherUserId);
     try {
       const res = await api.client.get(`/api/messages/conversation/${otherUserId}`);
-      setMessages(res.data.messages || []);
+      const msgs = res.data.messages || [];
+      setMessages(msgs.reverse());
     } catch (err) {
       console.error('Failed to load conversation:', err);
     }

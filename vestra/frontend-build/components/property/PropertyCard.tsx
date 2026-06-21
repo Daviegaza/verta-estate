@@ -8,11 +8,13 @@ import {
   ShieldCheck, BedDouble, Bath, Maximize, MapPin, Eye,
   Heart, Sparkles, TrendingUp, Clock
 } from 'lucide-react';
+import api from '@/lib/api';
 
 interface PropertyCardProps {
   property: Property;
   className?: string;
   skeleton?: boolean;
+  isFavorited?: boolean;
 }
 
 export function PropertyCardSkeleton() {
@@ -36,8 +38,8 @@ export function PropertyCardSkeleton() {
   );
 }
 
-function PropertyCard({ property, className }: PropertyCardProps) {
-  const [isLiked, setIsLiked] = useState(false);
+function PropertyCard({ property, className, isFavorited = false }: PropertyCardProps) {
+  const [isLiked, setIsLiked] = useState(isFavorited);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isCompared, setIsCompared] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -153,10 +155,20 @@ function PropertyCard({ property, className }: PropertyCardProps) {
 
           {/* Wishlist button */}
           <button
-            onClick={(e) => {
+            onClick={async (e) => {
               e.preventDefault();
               e.stopPropagation();
-              setIsLiked(!isLiked);
+              try {
+                if (isLiked) {
+                  await api.client.delete(`/api/favorites/${property.id}`);
+                } else {
+                  await api.client.post(`/api/favorites/${property.id}`);
+                }
+                setIsLiked(!isLiked);
+              } catch {
+                // If API fails (e.g., not authenticated), toggle locally
+                setIsLiked(!isLiked);
+              }
             }}
             className={cn(
               'absolute bottom-3 right-3 w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-sm shadow-sm transition-all duration-200',

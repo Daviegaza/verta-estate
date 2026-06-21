@@ -61,13 +61,15 @@ async def create_escrow(
 async def deposit_paid(
     db: AsyncSession, escrow_id: int, payment_reference: str,
 ) -> Optional[EscrowTransaction]:
-    """Mark the deposit as paid."""
+    """Mark the deposit as paid. Only valid from 'initiated' status."""
     escrow = await _get_escrow(db, escrow_id)
     if not escrow:
         return None
+    if escrow.status != EscrowStatus.initiated:
+        raise ValueError(f"Cannot mark deposit paid from status: {escrow.status.value}")
 
     escrow.status = EscrowStatus.deposit_paid
-    escrow.payment_reference = payment_reference
+    escrow.deposit_reference = payment_reference
 
     await db.commit()
     await db.refresh(escrow)
@@ -78,10 +80,12 @@ async def deposit_paid(
 async def balance_paid(
     db: AsyncSession, escrow_id: int, payment_reference: str,
 ) -> Optional[EscrowTransaction]:
-    """Mark the balance as paid — funds now fully in escrow."""
+    """Mark the balance as paid. Only valid from 'deposit_paid' status."""
     escrow = await _get_escrow(db, escrow_id)
     if not escrow:
         return None
+    if escrow.status != EscrowStatus.deposit_paid:
+        raise ValueError(f"Cannot mark balance paid from status: {escrow.status.value}. Deposit must be paid first.")
 
     escrow.status = EscrowStatus.balance_paid
     escrow.payment_reference = payment_reference

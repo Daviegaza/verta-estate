@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import AuthGuard from '@/components/layout/AuthGuard';
 import RoleBanner from '@/components/dashboard/RoleBanner';
@@ -47,14 +47,25 @@ function TenantContent() {
   const [paymentSent, setPaymentSent] = useState(false);
   const [checkingPayment, setCheckingPayment] = useState(false);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [paymentTimeout, setPaymentTimeout] = useState(false);
   const [lastReceipt, setLastReceipt] = useState<any>(null);
+  const pollCount = useRef(0);
 
   useEffect(() => { loadData(); }, []);
 
-  // ── Auto-poll for payment confirmation ──
+  // ── Auto-poll for payment confirmation (max 20 attempts = 60 seconds) ──
   useEffect(() => {
     if (!paymentSent || paymentConfirmed) return;
+    pollCount.current = 0;
+    setPaymentTimeout(false);
     const interval = setInterval(async () => {
+      pollCount.current += 1;
+      if (pollCount.current > 20) {
+        clearInterval(interval);
+        setPaymentSent(false);
+        setPaymentTimeout(true);
+        return;
+      }
       setCheckingPayment(true);
       try {
         const res = await api.client.get('/api/payments/my');
@@ -238,7 +249,7 @@ function TenantContent() {
       </RoleBanner>
 
       {/* Payment Status Banner */}
-      {paymentSent && !paymentConfirmed && (
+      {paymentSent && !paymentConfirmed && !paymentTimeout && (
         <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 text-center animate-pulse">
           <Smartphone className="w-12 h-12 text-amber-500 mx-auto mb-3" />
           <h3 className="text-lg font-bold text-amber-800 mb-2">Check Your Phone 📱</h3>
@@ -250,6 +261,21 @@ function TenantContent() {
               <span className="text-sm">Waiting for payment confirmation...</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Payment Timeout Banner */}
+      {paymentTimeout && (
+        <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-6 text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
+          <h3 className="text-lg font-bold text-red-800 mb-2">Payment Timed Out</h3>
+          <p className="text-red-700 mb-4">We didn't receive a payment confirmation after 60 seconds. The STK Push may have expired.</p>
+          <Button
+            onClick={() => setPaymentTimeout(false)}
+            className="bg-red-600 hover:bg-red-500 text-white"
+          >
+            Try Again
+          </Button>
         </div>
       )}
 

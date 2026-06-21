@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import PasswordStrengthMeter from '@/components/ui/PasswordStrengthMeter';
 import { ShieldCheck, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 type Role = 'buyer' | 'seller' | 'agent' | 'landlord';
@@ -138,6 +139,7 @@ export default function RegisterPage() {
                 </button>
               }
             />
+            {form.password.length > 0 && <PasswordStrengthMeter password={form.password} />}
 
             <div className="flex items-start gap-2">
               <input type="checkbox" required className="mt-1 rounded border-gray-300 text-emerald-600" />

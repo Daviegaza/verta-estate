@@ -8,7 +8,7 @@ import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import {
   Home, ShieldCheck, BarChart2,
-  User, Menu, X, LogOut, ChevronDown, Sun, Moon
+  User, Menu, X, LogOut, ChevronDown, Sun, Moon, Bell
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 
@@ -19,12 +19,42 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
   const { resolved, setTheme } = useTheme();
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Escape key closes menus
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMobileOpen(false);
+        setUserMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Fetch notification count for authenticated users
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const token = localStorage.getItem('vestra_token');
+    if (!token) return;
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/notifications?unread_only=true&limit=1`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.ok && r.json())
+      .then((data) => {
+        if (data && typeof data.unread_count === 'number') {
+          setNotifCount(data.unread_count);
+        }
+      })
+      .catch(() => {});
+  }, [isAuthenticated]);
 
   const handleLogout = () => {
     logout();
@@ -76,6 +106,21 @@ export default function Navbar() {
 
           {/* Right Side */}
           <div className="flex items-center gap-3">
+            {/* Notification Bell */}
+            {isAuthenticated && (
+              <Link
+                href="/notifications"
+                className="relative p-2 rounded-xl hover:bg-gray-100 transition-colors"
+                aria-label="Notifications"
+              >
+                <Bell className="w-4 h-4 text-gray-600" />
+                {notifCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center min-w-[18px] min-h-[18px]">
+                    {notifCount > 99 ? '99+' : notifCount}
+                  </span>
+                )}
+              </Link>
+            )}
             {/* Theme Toggle */}
             <button
               onClick={() => setTheme(resolved === 'dark' ? 'light' : 'dark')}

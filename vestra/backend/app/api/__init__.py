@@ -8,11 +8,13 @@ from fastapi import APIRouter
 from app.api.routes import admin, auth, payments, properties, verification
 from app.api.routes.ai_routes import router as ai_router
 from app.api.routes.coupons import router as coupons_router
+from app.api.routes.currencies import router as currencies_router
 from app.api.routes.disputes import router as disputes_router
 from app.api.routes.enterprise import router as enterprise_router
 from app.api.routes.escrow import router as escrow_router
 from app.api.routes.favorites import router as favorites_router
 from app.api.routes.fraud import router as fraud_router
+from app.api.routes.investment import router as investment_router
 from app.api.routes.kyc import router as kyc_router
 from app.api.routes.messages import router as messages_router
 from app.api.routes.monitoring import router as monitoring_router
@@ -55,6 +57,8 @@ def _include_all_routers(router: APIRouter) -> None:
     router.include_router(reviews_router)
     router.include_router(payouts_router)
     router.include_router(coupons_router)
+    router.include_router(currencies_router)
+    router.include_router(investment_router)
     router.include_router(title_chain_router)
     router.include_router(trust_safety_router)
     router.include_router(referrals_router)
@@ -69,7 +73,7 @@ _include_all_routers(api_router)
 @api_router.get("/version", tags=["meta"], summary="API version info")
 async def api_version_v1():
     return {
-        "version": "4.0.0",
+        "version": "4.3.0",
         "api_version": "v1",
         "deprecated_versions": [],
     }
@@ -86,7 +90,7 @@ _include_all_routers(legacy_router)
 @legacy_router.get("/version", tags=["meta"], summary="API version info")
 async def api_version_legacy():
     return {
-        "version": "4.0.0",
+        "version": "4.3.0",
         "api_version": "v1",
         "deprecated_versions": [],
     }

@@ -10,12 +10,15 @@ engine = create_async_engine(
     pool_size=settings.DATABASE_POOL_SIZE,
     max_overflow=settings.DATABASE_MAX_OVERFLOW,
     pool_recycle=settings.DATABASE_POOL_RECYCLE,
-    pool_timeout=30,
+    pool_timeout=5,  # Fast fail: 5s max waiting for pool connection
+    pool_use_lifo=True,  # Use most recently used connection first (caching-friendly)
     connect_args={
+        "timeout": 5,  # Fast fail: 5s TCP connect timeout (prevents hanging)
+        "command_timeout": 10,  # 10s max per SQL statement
         "server_settings": {
             "application_name": "vestra_api",
             "timezone": "Africa/Nairobi",
-        }
+        },
     },
 )
 

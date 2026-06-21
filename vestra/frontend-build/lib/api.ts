@@ -840,6 +840,66 @@ class VestraAPIClient {
     const res = await this.client.get<Record<string, unknown>>('/api/admin/coupons/validate', { params: { code } });
     return res.data;
   }
+
+  // ─── Notifications (v4.3.0) ─────────────────────────────────────────────────
+
+  async getNotifications(): Promise<{ data: Array<Record<string, unknown>> }> {
+    return withRetry(async () => {
+      const res = await this.client.get<{ data: Array<Record<string, unknown>> }>('/api/v1/notifications/');
+      return res.data;
+    });
+  }
+
+  async markNotificationRead(id: number): Promise<void> {
+    await this.client.put(`/api/v1/notifications/${id}/read`);
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    await this.client.put('/api/v1/notifications/read-all');
+  }
+
+  // ─── Currencies (v4.3.0) ────────────────────────────────────────────────────
+
+  async getCurrencies(): Promise<{ base: string; currencies: Array<{ code: string; symbol: string; name: string; rate_to_kes: number; updated_at: string | null }>; last_updated: string | null }> {
+    return withRetry(async () => {
+      const res = await this.client.get('/api/v1/currencies');
+      return res.data;
+    });
+  }
+
+  async getCurrencyRates(): Promise<{ base: string; rates: Record<string, number>; last_updated: string | null }> {
+    return withRetry(async () => {
+      const res = await this.client.get('/api/v1/currencies/rates');
+      return res.data;
+    });
+  }
+
+  async convertCurrency(amount: number, fromCurrency: string, toCurrency: string): Promise<{ amount: number; from: string; to: string; result: number; formatted: string; rate: number }> {
+    const res = await this.client.get('/api/v1/currencies/convert', {
+      params: { amount, from_currency: fromCurrency, to_currency: toCurrency },
+    });
+    return res.data;
+  }
+
+  // ─── Investment Advisor (v4.3.0) ─────────────────────────────────────────────
+
+  async analyzeInvestment(params: {
+    price: number; city: string; area?: string; property_type?: string;
+    bedrooms?: number; monthly_rent_estimate?: number;
+    property_size_sqm?: number; trust_score?: number;
+  }): Promise<{ success: boolean; analysis: Record<string, unknown> }> {
+    return withRetry(async () => {
+      const res = await this.client.get('/api/v1/investment/analyze', { params });
+      return res.data;
+    });
+  }
+
+  async getMarketConditions(city: string): Promise<{ city: string; market_status: string; avg_price_per_sqm: number; avg_rental_yield: number; price_trend: string; demand_level: string; supply_level: string; days_on_market_avg: number; investor_sentiment: number }> {
+    return withRetry(async () => {
+      const res = await this.client.get('/api/v1/investment/market-conditions', { params: { city } });
+      return res.data;
+    });
+  }
 }
 
 export const api = new VestraAPIClient();

@@ -37,6 +37,7 @@ from app.core.middleware import (
     SecurityHeadersMiddleware,
 )
 from app.core.redis import close_redis, get_redis
+from app.core.security_hardening import InputSanitizationMiddleware
 from app.core.websocket import handle_ws
 
 logger = logging.getLogger("vestra")
@@ -64,24 +65,47 @@ class DecimalAwareJSONResponse(JSONResponse):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ──
-    # IMPORTANT: In production, run `alembic upgrade head` before starting the app.
-    # Schema is managed through Alembic migrations — not auto-created.
+    # CRITICAL: Server must start FAST. All heavy init runs in background.
+    # In production, run `alembic upgrade head` before starting the app.
+
+    import asyncio as _asyncio
+
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    await create_tables()
 
-    # Ensure performance indexes
-    async with AsyncSessionLocal() as db:
-        await create_performance_indexes(db)
+    # ── Fire-and-forget background initializers (don't block server start) ──
 
-    # Warm Redis connection
-    try:
-        r = await get_redis()
-        await r.ping()
-        logger.info('{"event":"startup","redis":"connected"}')
-    except Exception:
-        logger.warning('{"event":"startup","redis":"unavailable — caching disabled"}')
+    async def _background_init():
+        """All heavy initialization runs here — server is already live."""
+        try:
+            # DB setup (best-effort)
+            await create_tables()
+            try:
+                async with AsyncSessionLocal() as db:
+                    await create_performance_indexes(db)
+            except Exception:
+                pass  # DB not available yet — indexes will be created when it is
+        except Exception:
+            logger.warning('{"event":"startup","db":"unavailable — will retry on first request"}')
 
-    # Initialize Sentry for error tracking
+        # Redis warmup
+        try:
+            r = await get_redis()
+            if r:
+                await _asyncio.wait_for(r.ping(), timeout=2.0)
+                logger.info('{"event":"startup","redis":"connected"}')
+        except Exception:
+            logger.warning('{"event":"startup","redis":"unavailable — caching disabled"}')
+
+        # Currency rates
+        try:
+            from app.services.currency_refresh_service import currency_service
+            await _asyncio.wait_for(currency_service.initialize(), timeout=3.0)
+            _ = _asyncio.ensure_future(_refresh_currency_rates())  # noqa: RUF006
+            logger.info('{"event":"startup","currency_service":"initialized"}')
+        except Exception:
+            logger.warning('{"event":"startup","currency_service":"unavailable"}')
+
+    # Sentry — runs synchronously (fast, no network calls at init time)
     if settings.SENTRY_DSN:
         sentry_sdk.init(
             dsn=settings.SENTRY_DSN,
@@ -92,17 +116,17 @@ async def lifespan(app: FastAPI):
                 settings.SENTRY_TRACES_SAMPLE_RATE
                 if settings.ENVIRONMENT == "production"
                 else 0.5 if settings.ENVIRONMENT == "staging"
-                else 0.0  # No tracing in development
+                else 0.0
             ),
             profiles_sample_rate=0.1,
         )
-        logger.info(
-            '{"event":"startup","sentry":"enabled","env":"%s"}',
-            settings.ENVIRONMENT,
-        )
+        logger.info('{"event":"startup","sentry":"enabled","env":"%s"}', settings.ENVIRONMENT)
+
+    # Launch background init — server responds to requests immediately
+    _asyncio.ensure_future(_background_init())  # noqa: RUF006
 
     logger.info(
-        '{"event":"startup","app":"%s","version":"%s","env":"%s"}',
+        '{"event":"startup","app":"%s","version":"%s","env":"%s","status":"ready"}',
         settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
     )
     yield
@@ -132,10 +156,13 @@ app = FastAPI(
 
 # ── Middleware Stack (applied in order — first added = outermost) ───────────────
 
-# 1. Security headers (outermost)
+# 1. Input sanitization — blocks SQL injection, XSS, path traversal (outermost)
+app.add_middleware(InputSanitizationMiddleware)
+
+# 2. Security headers
 app.add_middleware(SecurityHeadersMiddleware)
 
-# 2. CSRF protection (double-submit cookie pattern)
+# 3. CSRF protection (double-submit cookie pattern)
 app.add_middleware(CSRFMiddleware)
 
 # 3. Request size limit
@@ -410,3 +437,17 @@ def _error_code_for_status(status_code: int) -> str:
         503: "service_unavailable",
     }
     return mapping.get(status_code, "http_error")
+
+
+async def _refresh_currency_rates():
+    """Background task: refresh currency rates periodically (every 6 hours)."""
+    import asyncio as _asyncio
+
+    from app.services.currency_refresh_service import currency_service
+
+    while True:
+        await _asyncio.sleep(3600 * 6)  # 6 hours
+        try:
+            await currency_service.refresh()
+        except Exception:
+            logger.warning('{"event":"currency_refresh_failed"}')

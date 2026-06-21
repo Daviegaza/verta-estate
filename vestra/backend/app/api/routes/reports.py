@@ -2,16 +2,18 @@
 Verification Report API — paid trust report generation and retrieval.
 Also provides public shareable trust report endpoints (no auth required).
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from datetime import UTC
+
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.document import VerificationStatus
+from app.models.user import UserRole
 from app.services.report_service import generate_verification_pdf
 from app.services.verification_service import get_verification_by_id
-from app.models.user import UserRole
-from app.models.document import VerificationStatus
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -169,12 +171,11 @@ async def get_public_trust_report(
     recommendation = verification.ai_recommendation or "review"
     fraud_score = verification.fraud_risk_score or 0
 
-    from datetime import timezone
     verified_on = None
     if verification.reviewed_at:
-        verified_on = verification.reviewed_at.astimezone(timezone.utc).isoformat()
+        verified_on = verification.reviewed_at.astimezone(UTC).isoformat()
     elif verification.created_at:
-        verified_on = verification.created_at.astimezone(timezone.utc).isoformat()
+        verified_on = verification.created_at.astimezone(UTC).isoformat()
 
     # QR-code placeholder URL (in production, point to a real URL)
     qr_url = f"https://vestra.co.ke/reports/public/{verification_id}"

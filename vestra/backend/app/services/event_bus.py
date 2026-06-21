@@ -9,9 +9,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+# ── Background task tracking (prevents GC of async tasks) ───────────────────
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _fire_and_forget(coro):
+    """Fire a coroutine as a background task with persistent reference."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
 
 logger = logging.getLogger("vestra")
 
@@ -122,11 +134,11 @@ async def emit_event(
 
     # ── Fallback to fire-and-forget if Redis is down ──────────────────────
     if not notification_enqueued:
-        asyncio.create_task(
+        _fire_and_forget(
             _create_notification_background(event_type, user_id, data)
         )
     if not webhook_enqueued:
-        asyncio.create_task(
+        _fire_and_forget(
             _trigger_webhooks_background(event_type, data)
         )
 

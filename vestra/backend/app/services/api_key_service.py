@@ -5,16 +5,18 @@ Keys are SHA-256 hashed; only the prefix and full key are shown once at creation
 """
 from __future__ import annotations
 
-import secrets
 import hashlib
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+import secrets
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update
+from sqlalchemy import select
 
 from app.models.enterprise import APIKey
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -40,7 +42,7 @@ async def create_api_key(
 
     expires_at = None
     if expires_in_days:
-        expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
+        expires_at = datetime.now(UTC) + timedelta(days=expires_in_days)
 
     api_key = APIKey(
         user_id=user_id,
@@ -60,7 +62,7 @@ async def create_api_key(
     return api_key, raw_key
 
 
-async def validate_api_key(db: AsyncSession, raw_key: str) -> Optional[APIKey]:
+async def validate_api_key(db: AsyncSession, raw_key: str) -> APIKey | None:
     """
     Validate an API key. Returns the APIKey record if valid, None otherwise.
     Used as a FastAPI dependency for enterprise endpoints.
@@ -73,7 +75,7 @@ async def validate_api_key(db: AsyncSession, raw_key: str) -> Optional[APIKey]:
     result = await db.execute(
         select(APIKey).where(
             APIKey.key_hash == key_hash,
-            APIKey.is_active == True,
+            APIKey.is_active,
         )
     )
     api_key = result.scalar_one_or_none()
@@ -82,11 +84,11 @@ async def validate_api_key(db: AsyncSession, raw_key: str) -> Optional[APIKey]:
         return None
 
     # Check expiration
-    if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
+    if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
         return None
 
     # Update last_used_at
-    api_key.last_used_at = datetime.now(timezone.utc)
+    api_key.last_used_at = datetime.now(UTC)
     await db.commit()
 
     return api_key
@@ -105,7 +107,7 @@ async def record_api_key_usage(
     r = await get_redis()
     if r is not None:
         try:
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            today = datetime.now(UTC).strftime("%Y-%m-%d")
             await r.hincrby(f"vestra:api_usage:{api_key_id}:{today}", endpoint, 1)
             await r.expire(f"vestra:api_usage:{api_key_id}:{today}", 86400 * 7)
         except Exception:
@@ -122,7 +124,7 @@ async def get_user_keys(db: AsyncSession, user_id: int) -> list[APIKey]:
     return result.scalars().all()
 
 
-async def revoke_api_key(db: AsyncSession, key_id: int, user_id: int) -> Optional[APIKey]:
+async def revoke_api_key(db: AsyncSession, key_id: int, user_id: int) -> APIKey | None:
     """Revoke (deactivate) an API key."""
     result = await db.execute(
         select(APIKey).where(APIKey.id == key_id, APIKey.user_id == user_id)
@@ -156,7 +158,7 @@ async def get_api_key_usage(
         key_usage = {}
         if r is not None:
             for d in range(days):
-                day = (datetime.now(timezone.utc) - timedelta(days=d)).strftime("%Y-%m-%d")
+                day = (datetime.now(UTC) - timedelta(days=d)).strftime("%Y-%m-%d")
                 try:
                     daily = await r.hgetall(f"vestra:api_usage:{key.id}:{day}")
                     key_usage[day] = sum(int(v) for v in daily.values())

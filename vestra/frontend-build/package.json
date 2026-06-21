@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node scripts/generate-pwa-icons.js",
+    "prebuild": "node scripts/generate-pwa-icons.mjs",
     "build": "next build",
     "postbuild": "node -e \"require('fs').copyFileSync('public/sw.js', '.next/standalone/public/sw.js', 0)\" 2>nul || echo sw.js copy skipped (not standalone build)",
     "start": "next start",

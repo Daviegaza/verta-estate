@@ -3,14 +3,23 @@ Enterprise & Business models — API keys, coupons, payouts, receipts.
 Monetization infrastructure for B2B and B2C revenue streams.
 """
 import enum
+
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, Enum, Text, JSON,
-    Numeric, ForeignKey
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from app.core.database import Base
 
+from app.core.database import Base
 
 # ── API Keys (Enterprise) ──────────────────────────────────────────────────────
 
@@ -35,7 +44,7 @@ class APIKey(Base):
     user = relationship("User")
 
 
-class WebhookEvent(str, enum.Enum):
+class WebhookEvent(enum.StrEnum):
     property_created = "property.created"
     property_updated = "property.updated"
     verification_completed = "verification.completed"
@@ -71,7 +80,7 @@ class Webhook(Base):
 
 # ── Coupons / Promo Codes ──────────────────────────────────────────────────────
 
-class DiscountType(str, enum.Enum):
+class DiscountType(enum.StrEnum):
     percentage = "percentage"
     fixed = "fixed"
 
@@ -100,7 +109,7 @@ class Coupon(Base):
 
 # ── Payouts ────────────────────────────────────────────────────────────────────
 
-class PayoutStatus(str, enum.Enum):
+class PayoutStatus(enum.StrEnum):
     pending = "pending"
     processing = "processing"
     completed = "completed"
@@ -148,7 +157,7 @@ class RentReceipt(Base):
 
 # ── Inspection Reports ─────────────────────────────────────────────────────────
 
-class InspectionType(str, enum.Enum):
+class InspectionType(enum.StrEnum):
     move_in = "move_in"
     move_out = "move_out"
     periodic = "periodic"

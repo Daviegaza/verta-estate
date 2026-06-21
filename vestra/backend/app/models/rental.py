@@ -2,14 +2,28 @@
 Rental Management Models — apartments, tenants, leases, rent payments, maintenance.
 Enables landlords to manage their entire rental portfolio from Vestra.
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Float, Numeric, ForeignKey, JSON, Text
+import enum
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import enum
+
 from app.core.database import Base
 
 
-class LeaseStatus(str, enum.Enum):
+class LeaseStatus(enum.StrEnum):
     active = "active"
     expiring_soon = "expiring_soon"   # Within 30 days
     expired = "expired"
@@ -17,7 +31,7 @@ class LeaseStatus(str, enum.Enum):
     renewed = "renewed"
 
 
-class RentPaymentStatus(str, enum.Enum):
+class RentPaymentStatus(enum.StrEnum):
     pending = "pending"
     paid = "paid"
     late = "late"
@@ -25,14 +39,14 @@ class RentPaymentStatus(str, enum.Enum):
     failed = "failed"
 
 
-class MaintenancePriority(str, enum.Enum):
+class MaintenancePriority(enum.StrEnum):
     low = "low"
     medium = "medium"
     high = "high"
     emergency = "emergency"
 
 
-class MaintenanceStatus(str, enum.Enum):
+class MaintenanceStatus(enum.StrEnum):
     reported = "reported"
     assigned = "assigned"
     in_progress = "in_progress"
@@ -158,7 +172,7 @@ class RentPayment(Base):
 
 # ── Payment Arrangement (Flexible Payment Plan) ────────────────────────────────
 
-class ArrangementStatus(str, enum.Enum):
+class ArrangementStatus(enum.StrEnum):
     requested = "requested"
     approved = "approved"
     active = "active"

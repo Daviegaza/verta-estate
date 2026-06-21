@@ -43,12 +43,6 @@ function EditPropertyContent() {
     size_sqft: '', year_built: '',
   });
 
-  useEffect(() => {
-    if (!isHydrated) return;
-    if (!isAuthenticated) { router.push('/auth/login'); return; }
-    loadProperty();
-  }, [isHydrated, isAuthenticated, propertyId]);
-
   const loadProperty = async () => {
     try {
       const prop: Property = await api.getProperty(propertyId);
@@ -74,6 +68,12 @@ function EditPropertyContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (!isAuthenticated) { router.push('/auth/login'); return; }
+    loadProperty();
+  }, [isHydrated, isAuthenticated, propertyId]);
 
   const set = (k: string, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
 

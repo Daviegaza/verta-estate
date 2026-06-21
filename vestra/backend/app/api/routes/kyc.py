@@ -1,15 +1,20 @@
 """
 KYC (Know Your Customer) API routes — identity verification.
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
-from app.services.kyc_service import (
-    submit_kyc, get_kyc_status, admin_review_kyc,
-    get_pending_kyc, count_pending_kyc, batch_review_kyc,
-)
+from app.core.security import get_current_admin, get_current_user
 from app.models.kyc_notification import KYCStatus
+from app.services.kyc_service import (
+    admin_review_kyc,
+    batch_review_kyc,
+    count_pending_kyc,
+    get_kyc_status,
+    get_pending_kyc,
+    submit_kyc,
+)
 
 router = APIRouter(prefix="/kyc", tags=["KYC"])
 
@@ -27,6 +32,7 @@ async def submit_kyc_endpoint(
     """Submit KYC verification with ID documents."""
     # Save uploaded files
     import os
+
     from app.core.config import settings
 
     upload_dir = os.path.join(settings.UPLOAD_DIR, "kyc", str(current_user.id))
@@ -116,7 +122,7 @@ async def admin_pending_kyc(
 async def admin_review_kyc_endpoint(
     kyc_id: int,
     status: KYCStatus,
-    rejection_reason: str = None,
+    rejection_reason: str | None = None,
     current_user=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -141,7 +147,7 @@ async def admin_review_kyc_endpoint(
 async def admin_batch_review_kyc_endpoint(
     kyc_ids: list[int],
     status: KYCStatus,
-    rejection_reason: str = None,
+    rejection_reason: str | None = None,
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):

@@ -1,32 +1,55 @@
+
+import contextlib
+from datetime import UTC
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, delete as sql_delete
+from sqlalchemy import delete as sql_delete
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+
 from app.core.database import get_db
 from app.core.security import get_current_admin
-from app.models.user import UserRole
 from app.models.payment import PaymentStatus
-from app.services.user_service import (
-    count_users, count_agents, get_all_users, get_user_by_id,
-    update_user_role, toggle_user_active, get_user_role_distribution,
-    get_monthly_user_growth,
+from app.models.user import UserRole
+from app.services.payment_service import (
+    get_daily_revenue,
+    get_monthly_revenue_stats,
+    get_payment_by_id,
+    get_revenue_by_method,
+    get_revenue_by_purpose,
+    get_revenue_reconciliation,
+    get_revenue_summary,
+    get_total_revenue,
 )
 from app.services.property_service import (
-    count_properties, count_active_listings, count_verified_properties,
-    get_all_properties_admin, update_property_status, get_monthly_listing_stats,
-    get_property_type_distribution, get_city_distribution,
+    count_active_listings,
+    count_properties,
+    count_verified_properties,
+    get_all_properties_admin,
+    get_city_distribution,
+    get_monthly_listing_stats,
+    get_property_type_distribution,
+    update_property_status,
+)
+from app.services.user_service import (
+    count_agents,
+    count_users,
+    get_all_users,
+    get_monthly_user_growth,
+    get_user_by_id,
+    get_user_role_distribution,
+    toggle_user_active,
+    update_user_role,
 )
 from app.services.verification_service import (
-    count_verifications, count_pending_verifications,
-    get_pending_verifications, admin_review_verification,
+    admin_review_verification,
+    bulk_review_verifications,
+    count_pending_verifications,
+    count_verifications,
     get_monthly_verification_stats,
-    get_verification_queue, bulk_review_verifications,
+    get_pending_verifications,
     get_verification_admin_stats,
-)
-from app.services.payment_service import (
-    get_total_revenue, get_monthly_revenue_stats,
-    get_revenue_summary, get_revenue_by_purpose, get_revenue_by_method,
-    get_daily_revenue, get_revenue_reconciliation,
+    get_verification_queue,
 )
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -40,8 +63,10 @@ async def get_admin_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Full admin dashboard stats with chart data. Cached for 2 min."""
+    import logging as _log
+    import traceback as _tb
+
     from app.core.redis import cache_get, cache_set
-    import traceback as _tb, logging as _log
 
     cache_key = "vestra:admin:stats"
     cached = await cache_get(cache_key)
@@ -139,8 +164,8 @@ async def get_admin_stats(
 async def list_all_users(
     skip: int = 0,
     limit: int = 50,
-    role: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
+    role: str | None = Query(None),
+    search: str | None = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -179,7 +204,7 @@ async def change_user_role(
     try:
         new_role = UserRole(role)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid role: {role}")
+        raise HTTPException(status_code=400, detail=f"Invalid role: {role}") from None
 
     updated = await update_user_role(db, user, new_role)
     return {
@@ -216,7 +241,7 @@ async def toggle_user_status(
 async def list_all_properties_admin(
     skip: int = 0,
     limit: int = 50,
-    status: Optional[str] = Query(None),
+    status: str | None = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -260,7 +285,7 @@ async def set_property_status(
     try:
         new_status = PropertyStatus(status)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}") from None
 
     prop = await update_property_status(db, property_id, new_status)
     if not prop:
@@ -290,10 +315,9 @@ async def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Delete user's properties, payments, documents, etc.
-    from app.models.property import Property
-    from app.models.payment import Payment
     from app.models.document import Document
-    from sqlalchemy import delete as sql_delete
+    from app.models.payment import Payment
+    from app.models.property import Property
 
     await db.execute(sql_delete(Property).where(Property.owner_id == user_id))
     await db.execute(sql_delete(Payment).where(Payment.user_id == user_id))
@@ -310,13 +334,14 @@ async def delete_user(
 async def list_all_payments(
     skip: int = 0,
     limit: int = 50,
-    status: Optional[str] = Query(None),
+    status: str | None = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """List all payments across the platform."""
-    from app.models.payment import Payment, PaymentStatus
     from sqlalchemy import select as sa_select
+
+    from app.models.payment import Payment
 
     query = sa_select(Payment).order_by(Payment.created_at.desc())
     count_query = sa_select(func.count(Payment.id))
@@ -361,8 +386,8 @@ async def refund_payment(
     db: AsyncSession = Depends(get_db),
 ):
     """Refund a completed payment (Stripe API or M-Pesa manual mark)."""
-    from app.services.payment_service import refund_payment_stripe, refund_payment_mpesa
-    from app.models.payment import Payment, PaymentStatus, PaymentMethod
+    from app.models.payment import PaymentMethod
+    from app.services.payment_service import refund_payment_mpesa, refund_payment_stripe
 
     payment = await get_payment_by_id(db, payment_id)
     if not payment:
@@ -374,7 +399,7 @@ async def refund_payment(
         try:
             result = await refund_payment_stripe(db, payment)
         except ValueError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise HTTPException(status_code=502, detail=str(e)) from e
     elif payment.method == PaymentMethod.mpesa:
         result = await refund_payment_mpesa(db, payment)
     else:
@@ -435,8 +460,8 @@ async def revenue_reconcile(
 async def list_audit_logs(
     skip: int = 0,
     limit: int = 100,
-    user_id: Optional[int] = Query(None),
-    action: Optional[str] = Query(None),
+    user_id: int | None = Query(None),
+    action: str | None = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -462,12 +487,12 @@ async def list_audit_logs(
     return {
         "items": [
             {
-                "id": l.id, "user_id": l.user_id, "action": l.action,
-                "resource_type": l.resource_type, "resource_id": l.resource_id,
-                "details": l.details, "ip_address": l.ip_address,
-                "created_at": l.created_at.isoformat() if l.created_at else None,
+                "id": log_entry.id, "user_id": log_entry.user_id, "action": log_entry.action,
+                "resource_type": log_entry.resource_type, "resource_id": log_entry.resource_id,
+                "details": log_entry.details, "ip_address": log_entry.ip_address,
+                "created_at": log_entry.created_at.isoformat() if log_entry.created_at else None,
             }
-            for l in logs
+            for log_entry in logs
         ],
         "total": total,
     }
@@ -478,7 +503,7 @@ async def list_audit_logs(
 @router.get("/fraud-reports")
 async def list_fraud_reports(
     limit: int = 50,
-    status: Optional[str] = Query(None),
+    status: str | None = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -487,10 +512,8 @@ async def list_fraud_reports(
 
     query = select(FraudReport).order_by(FraudReport.created_at.desc())
     if status:
-        try:
+        with contextlib.suppress(ValueError):
             query = query.where(FraudReport.status == FraudReportStatus(status))
-        except ValueError:
-            pass
 
     result = await db.execute(query.limit(limit))
     reports = result.scalars().all()
@@ -516,8 +539,8 @@ async def list_fraud_reports(
 
 @router.get("/analytics/funnel")
 async def analytics_conversion_funnel(
-    start_date: Optional[str] = Query(None, description="ISO date (YYYY-MM-DD)"),
-    end_date: Optional[str] = Query(None, description="ISO date (YYYY-MM-DD)"),
+    start_date: str | None = Query(None, description="ISO date (YYYY-MM-DD)"),
+    end_date: str | None = Query(None, description="ISO date (YYYY-MM-DD)"),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -551,10 +574,11 @@ async def analytics_event_counts(
     db: AsyncSession = Depends(get_db),
 ):
     """Event type distribution for the last N days."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
+
     from app.services.analytics_service import get_event_counts_by_type
 
-    start = datetime.now(timezone.utc) - timedelta(days=days)
+    start = datetime.now(UTC) - timedelta(days=days)
     events = await get_event_counts_by_type(db, start_date=start)
     return {"items": events, "period_days": days}
 
@@ -575,12 +599,12 @@ async def analytics_daily_active_users(
 async def review_fraud_report(
     report_id: int,
     status: str = Query(..., pattern="^(pending|investigating|confirmed|false_report)$"),
-    notes: Optional[str] = Query(None),
+    notes: str | None = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Review and update a fraud report."""
-    from app.models.trust_safety import FraudReport, FraudReportStatus
+    from app.models.trust_safety import FraudReportStatus
     from app.services.fraud_service import admin_review_fraud
 
     report = await admin_review_fraud(db, report_id, admin.id, FraudReportStatus(status), notes)
@@ -598,7 +622,7 @@ async def list_pending_kyc(
     db: AsyncSession = Depends(get_db),
 ):
     """Get KYC submissions awaiting review."""
-    from app.services.kyc_service import get_pending_kyc, count_pending_kyc
+    from app.services.kyc_service import count_pending_kyc, get_pending_kyc
 
     items = await get_pending_kyc(db, limit)
     total = await count_pending_kyc(db)
@@ -623,13 +647,13 @@ async def list_pending_kyc(
 async def review_kyc(
     kyc_id: int,
     status: str = Query(..., pattern="^(approved|rejected)$"),
-    rejection_reason: Optional[str] = Query(None),
+    rejection_reason: str | None = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Approve or reject a KYC submission."""
-    from app.services.kyc_service import admin_review_kyc
     from app.models.kyc_notification import KYCStatus
+    from app.services.kyc_service import admin_review_kyc
 
     kyc = await admin_review_kyc(
         db, kyc_id, admin.id,
@@ -677,7 +701,7 @@ async def list_pending_verifications(
 async def review_verification(
     verification_id: int,
     status: str = Query(..., pattern="^(approved|flagged|rejected)$"),
-    notes: Optional[str] = Query(None),
+    notes: str | None = Query(None),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -687,7 +711,7 @@ async def review_verification(
     try:
         vstatus = VerificationStatus(status)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}") from None
 
     verification = await admin_review_verification(
         db, verification_id, admin.id, vstatus, notes
@@ -707,11 +731,11 @@ async def review_verification(
 
 @router.get("/verifications/queue")
 async def admin_verification_queue(
-    status: Optional[str] = Query(None, description="Filter by status: pending, in_progress, flagged, approved, rejected"),
-    city: Optional[str] = Query(None, description="Filter by city name"),
-    risk_level: Optional[str] = Query(None, description="Filter by risk: high, medium, low"),
-    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
-    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    status: str | None = Query(None, description="Filter by status: pending, in_progress, flagged, approved, rejected"),
+    city: str | None = Query(None, description="Filter by city name"),
+    risk_level: str | None = Query(None, description="Filter by risk: high, medium, low"),
+    date_from: str | None = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="End date YYYY-MM-DD"),
     limit: int = Query(50, ge=1, le=200),
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),

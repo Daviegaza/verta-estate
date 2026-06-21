@@ -232,7 +232,7 @@ function ReceiptDetail({ receipt, onBack }: { receipt: any; onBack: () => void }
 
         {/* Footer */}
         <div className="bg-gray-50 px-8 py-4 text-center">
-          <p className="text-xs text-gray-400">Powered by Vestra — Africa's Most Trusted Property Platform</p>
+          <p className="text-xs text-gray-400">Powered by Vestra — Africa&apos;s Most Trusted Property Platform</p>
         </div>
       </div>
 

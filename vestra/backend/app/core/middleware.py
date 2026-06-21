@@ -4,15 +4,15 @@ Uses Redis for distributed rate limiting.
 """
 from __future__ import annotations
 
+import gzip
+import json as _json
+import logging
 import time
 import uuid
-import logging
-import json as _json
-from fastapi import Request, HTTPException, Response
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+
+from fastapi import HTTPException, Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import StreamingResponse
-import gzip
-import io
 
 from app.core.config import settings
 from app.core.redis import RedisRateLimiter

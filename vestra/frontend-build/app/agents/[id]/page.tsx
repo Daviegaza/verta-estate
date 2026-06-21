@@ -83,13 +83,6 @@ export default function AgentProfilePage() {
   const [recentListings, setRecentListings] = useState<RecentListing[]>([]);
   const [listingsLoading, setListingsLoading] = useState(false);
 
-  useEffect(() => {
-    if (agentId) {
-      loadAgent();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId]);
-
   // ── Data fetching ──────────────────────────────────────────────────────
 
   const loadAgent = async () => {
@@ -133,6 +126,13 @@ export default function AgentProfilePage() {
       setListingsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (agentId) {
+      loadAgent();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId]);
 
   // ── Derived values ─────────────────────────────────────────────────────
 

@@ -54,6 +54,39 @@ export default function AuthGuard({
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Access check helper (used both for cached and fresh verification) ─────
+  function checkAccess(serverVerifiedUser: any, requireAdmin?: boolean, requireRoles?: string[]): boolean {
+    if (requireAdmin) {
+      const role = serverVerifiedUser.role;
+      if (role !== 'admin' && role !== 'super_admin') {
+        setBlocked(true);
+        setBlockReason('Admin access required. Your account does not have admin privileges.');
+        router.replace('/dashboard');
+        return false;
+      }
+    }
+
+    if (requireRoles && requireRoles.length > 0) {
+      const role = serverVerifiedUser.role;
+      if (!requireRoles.includes(role)) {
+        setBlocked(true);
+        setBlockReason(`This area requires one of these roles: ${requireRoles.join(', ')}`);
+        router.replace('/dashboard');
+        return false;
+      }
+    }
+
+    if (!serverVerifiedUser.is_active) {
+      setBlocked(true);
+      setBlockReason('Your account has been suspended. Contact support.');
+      logout();
+      router.replace('/auth/login');
+      return false;
+    }
+
+    return true;
+  }
+
   useEffect(() => {
     // Layer 1: Wait for Zustand to hydrate from localStorage
     if (!isHydrated) return;
@@ -159,39 +192,6 @@ export default function AuthGuard({
       events.forEach((event) => window.removeEventListener(event, resetInactivityTimer));
     };
   }, [verified, requireAuth, requireAdmin, requireRoles]);
-
-  // ── Access check helper (used both for cached and fresh verification) ─────
-  function checkAccess(serverVerifiedUser: any, requireAdmin?: boolean, requireRoles?: string[]): boolean {
-    if (requireAdmin) {
-      const role = serverVerifiedUser.role;
-      if (role !== 'admin' && role !== 'super_admin') {
-        setBlocked(true);
-        setBlockReason('Admin access required. Your account does not have admin privileges.');
-        router.replace('/dashboard');
-        return false;
-      }
-    }
-
-    if (requireRoles && requireRoles.length > 0) {
-      const role = serverVerifiedUser.role;
-      if (!requireRoles.includes(role)) {
-        setBlocked(true);
-        setBlockReason(`This area requires one of these roles: ${requireRoles.join(', ')}`);
-        router.replace('/dashboard');
-        return false;
-      }
-    }
-
-    if (!serverVerifiedUser.is_active) {
-      setBlocked(true);
-      setBlockReason('Your account has been suspended. Contact support.');
-      logout();
-      router.replace('/auth/login');
-      return false;
-    }
-
-    return true;
-  }
 
   // ── Loading State ────────────────────────────────────────────────────────
   if (!isHydrated || (!verified && !blocked)) {

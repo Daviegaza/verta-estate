@@ -1,23 +1,27 @@
 import os
+
 import aiofiles
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
-from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
+
 from app.core.config import settings
-from app.schemas.verification import VerificationRequest, VerificationResponse
+from app.core.database import get_db
+from app.core.security import get_current_admin, get_current_user
 from app.models.document import DocumentType, VerificationStatus
-from app.models.payment import PaymentPurpose, PaymentStatus
-from app.services.verification_service import (
-    create_verification_request, run_ai_verification,
-    get_verification_by_id, get_verifications_for_property,
-    admin_review_verification
-)
+from app.models.payment import PaymentPurpose
+from app.schemas.verification import VerificationRequest, VerificationResponse
 from app.services.payment_service import (
-    initiate_mpesa_payment, get_payment_by_id, VERIFICATION_REPORT_PRICE
+    VERIFICATION_REPORT_PRICE,
+    initiate_mpesa_payment,
 )
 from app.services.property_service import get_property_by_id
+from app.services.verification_service import (
+    admin_review_verification,
+    create_verification_request,
+    get_verification_by_id,
+    get_verifications_for_property,
+    run_ai_verification,
+)
 
 router = APIRouter(prefix="/verify", tags=["Verification"])
 
@@ -76,7 +80,7 @@ async def run_verification_now(
     # Run AI synchronously so results populate before returning
     try:
         verification = await run_ai_verification(db, verification.id)
-    except Exception as e:
+    except Exception:
         import traceback
         traceback.print_exc()
 

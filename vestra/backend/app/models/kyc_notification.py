@@ -3,13 +3,26 @@ KYC (Know Your Customer) models — identity verification for all platform users
 Required for agents, landlords, and for high-value transactions.
 """
 import enum
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Text, JSON, ForeignKey, UniqueConstraint
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from app.core.database import Base
 
 
-class KYCStatus(str, enum.Enum):
+class KYCStatus(enum.StrEnum):
     pending = "pending"
     reviewing = "reviewing"
     approved = "approved"

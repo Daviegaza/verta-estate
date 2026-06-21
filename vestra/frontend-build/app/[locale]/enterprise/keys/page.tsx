@@ -8,6 +8,7 @@ import { Card, Spinner, Badge } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import api from '@/lib/api';
+import type { APIKeyInfo } from '@/types';
 import {
   Key, Copy, Trash2, Plus, Eye, EyeOff, Clock,
   AlertTriangle, ArrowLeft, CheckCircle2, X,
@@ -55,26 +56,26 @@ function ApiKeysContent() {
   const [revokingId, setRevokingId] = useState<number | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<number | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const loadData = async () => {
     setLoading(true);
     setError('');
     try {
       const [keysData, usageData] = await Promise.all([
-        api.listApiKeys().catch(() => ({ keys: [] as ApiKey[] })),
+        api.listApiKeys().catch(() => ({ keys: [] })),
         api.getApiKeyUsage().catch(() => null),
       ]);
-      setKeys(keysData.keys || []);
-      setUsage(usageData);
+      setKeys((keysData.keys || []) as ApiKey[]);
+      setUsage(usageData as UsageStats | null);
     } catch {
       setError('Failed to load API keys. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,8 +96,9 @@ function ApiKeysContent() {
         newScopes.join(','),
         newRateLimit,
       );
-      if (result.key) {
-        setCreatedKey(result.key);
+      const resultData = result as APIKeyInfo & { key?: string };
+      if (resultData.key) {
+        setCreatedKey(resultData.key);
       }
     } catch {
       setCreateError('Failed to create API key. Please try again.');

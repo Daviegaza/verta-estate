@@ -1,11 +1,24 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Text, Float, ForeignKey, JSON
+import enum
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import enum
+
 from app.core.database import Base
 
 
-class DocumentType(str, enum.Enum):
+class DocumentType(enum.StrEnum):
     title_deed = "title_deed"
     sale_agreement = "sale_agreement"
     lease_agreement = "lease_agreement"
@@ -29,7 +42,7 @@ class Document(Base):
     mime_type = Column(String(100), nullable=True)
     is_verified = Column(Boolean, default=False)
     verification_notes = Column(Text, nullable=True)
-    
+
     is_deleted = Column(Boolean, default=False, index=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -38,7 +51,7 @@ class Document(Base):
     uploader = relationship("User")
 
 
-class VerificationStatus(str, enum.Enum):
+class VerificationStatus(enum.StrEnum):
     pending = "pending"
     in_progress = "in_progress"
     approved = "approved"

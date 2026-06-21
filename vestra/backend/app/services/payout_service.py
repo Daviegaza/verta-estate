@@ -5,12 +5,15 @@ Handles M-Pesa B2C payouts to Vestra users.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import func, select
 
 from app.models.enterprise import Payout, PayoutStatus
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -20,10 +23,10 @@ async def create_payout(
     user_id: int,
     amount_kes: float,
     payout_type: str = "commission",
-    reference_id: Optional[int] = None,
-    reference_type: Optional[str] = None,
-    mpesa_phone: Optional[str] = None,
-    description: Optional[str] = None,
+    reference_id: int | None = None,
+    reference_type: str | None = None,
+    mpesa_phone: str | None = None,
+    description: str | None = None,
 ) -> Payout:
     """Create a payout request for a user."""
     payout = Payout(
@@ -49,7 +52,7 @@ async def create_payout(
 
 async def process_payout(
     db: AsyncSession, payout_id: int,
-) -> Optional[dict]:
+) -> dict | None:
     """
     Process a pending payout via M-Pesa B2C.
     In production, this calls Safaricom B2C API.
@@ -75,7 +78,7 @@ async def process_payout(
         # )
 
         payout.status = PayoutStatus.processing
-        payout.processed_at = datetime.now(timezone.utc)
+        payout.processed_at = datetime.now(UTC)
         await db.commit()
         await db.refresh(payout)
 
@@ -92,7 +95,7 @@ async def process_payout(
 
 async def complete_payout(
     db: AsyncSession, payout_id: int, mpesa_receipt: str,
-) -> Optional[dict]:
+) -> dict | None:
     """Mark a payout as completed after M-Pesa confirmation."""
     result = await db.execute(
         select(Payout).where(Payout.id == payout_id)
@@ -103,7 +106,7 @@ async def complete_payout(
 
     payout.status = PayoutStatus.completed
     payout.mpesa_receipt = mpesa_receipt
-    payout.completed_at = datetime.now(timezone.utc)
+    payout.completed_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(payout)
@@ -122,7 +125,7 @@ async def complete_payout(
 
 async def fail_payout(
     db: AsyncSession, payout_id: int, reason: str,
-) -> Optional[dict]:
+) -> dict | None:
     """Mark a payout as failed."""
     result = await db.execute(
         select(Payout).where(Payout.id == payout_id)

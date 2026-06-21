@@ -6,14 +6,16 @@ price change, and payment behavior.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, text, case, and_
+from sqlalchemy import func, select, text
 
-from app.models.analytics import UserEvent, PriceChange, VerificationOutcome, SearchAnalytics
+from app.models.analytics import PriceChange, SearchAnalytics, UserEvent, VerificationOutcome
 from app.models.user import User
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -57,7 +59,7 @@ EVENT_REFERRAL_CONVERTED = "referral_converted"
 
 async def track_event(
     db: AsyncSession,
-    user_id: Optional[int],
+    user_id: int | None,
     session_id: str,
     event_type: str,
     event_data: dict | None = None,
@@ -69,7 +71,7 @@ async def track_event(
         session_id=session_id,
         event_type=event_type,
         event_data=event_data or {},
-        client_timestamp=client_timestamp or datetime.now(timezone.utc),
+        client_timestamp=client_timestamp or datetime.now(UTC),
     )
     db.add(event)
     await db.commit()
@@ -147,7 +149,7 @@ async def get_ai_accuracy_stats(db: AsyncSession) -> dict:
     """Get AI prediction accuracy statistics."""
     total = await db.execute(select(func.count(VerificationOutcome.id)))
     correct = await db.execute(
-        select(func.count(VerificationOutcome.id)).where(VerificationOutcome.was_correct == True)
+        select(func.count(VerificationOutcome.id)).where(VerificationOutcome.was_correct)
     )
     return {
         "total_predictions": total.scalar_one(),
@@ -162,7 +164,7 @@ async def get_ai_accuracy_stats(db: AsyncSession) -> dict:
 
 async def track_search(
     db: AsyncSession,
-    user_id: Optional[int],
+    user_id: int | None,
     query: str,
     session_id: str,
     filters_applied: dict | None = None,
@@ -199,8 +201,8 @@ async def get_top_searches(db: AsyncSession, limit: int = 20) -> list:
 
 async def get_conversion_funnel(
     db: AsyncSession,
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
 ) -> list[dict]:
     """
     Get conversion funnel: visitor -> registered -> verified -> made_payment -> subscribed.
@@ -208,7 +210,7 @@ async def get_conversion_funnel(
     Returns a list of funnel stages with counts, each stage filtering down from the previous.
     """
     if not end_date:
-        end_date = datetime.now(timezone.utc)
+        end_date = datetime.now(UTC)
     if not start_date:
         start_date = end_date - timedelta(days=90)
 
@@ -224,7 +226,7 @@ async def get_conversion_funnel(
     # Stage 2: Verified email
     verified = await db.execute(
         select(func.count(User.id)).where(
-            User.is_verified == True,
+            User.is_verified,
             User.created_at >= start_date,
             User.created_at <= end_date,
         )
@@ -254,7 +256,7 @@ async def get_conversion_funnel(
     subscribed_count = subscribed_users.scalar_one()
 
     # Stage 5: KYC approved
-    from app.models.kyc_notification import KYCVerification, KYCStatus
+    from app.models.kyc_notification import KYCStatus, KYCVerification
     kyc_approved = await db.execute(
         select(func.count(func.distinct(KYCVerification.user_id))).where(
             KYCVerification.status == KYCStatus.approved,
@@ -293,7 +295,7 @@ async def get_cohort_retention(db: AsyncSession, weeks: int = 8) -> list[dict]:
     """
     from app.models.payment import Payment, PaymentStatus
 
-    now = datetime.now(timezone.utc)
+    datetime.now(UTC)
 
     # Get all users with their registration weeks
     all_users = await db.execute(
@@ -334,7 +336,6 @@ async def get_cohort_retention(db: AsyncSession, weeks: int = 8) -> list[dict]:
                 payment_week = created_at.strftime('%Y-W%V')
                 # Calculate week offset
                 try:
-                    from datetime import date
                     cohort_start = _parse_iso_week(cohort_week_key)
                     payment_start = _parse_iso_week(payment_week)
                     if payment_start >= cohort_start:
@@ -381,13 +382,13 @@ async def get_cohort_retention(db: AsyncSession, weeks: int = 8) -> list[dict]:
 
 async def get_event_counts_by_type(
     db: AsyncSession,
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
     limit: int = 50,
 ) -> list[dict]:
     """Get count of events grouped by event_type."""
     if not end_date:
-        end_date = datetime.now(timezone.utc)
+        end_date = datetime.now(UTC)
     if not start_date:
         start_date = end_date - timedelta(days=30)
 
@@ -415,7 +416,7 @@ async def get_daily_active_users(
     days: int = 30,
 ) -> list[dict]:
     """Get daily active users (users with any event in a given day)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     start = now - timedelta(days=days)
 
     result = await db.execute(
@@ -444,7 +445,7 @@ def _pct(part: int, total: int) -> float:
     return round((part / max(total, 1)) * 100, 1)
 
 
-def _parse_iso_week(iso_key: str) -> date:
+def _parse_iso_week(iso_key: str):
     """Parse 'YYYY-WNN' ISO week string to a date (Monday of that week)."""
     from datetime import date
     year, week = iso_key.split('-W')
@@ -477,12 +478,12 @@ async def get_search_conversion_rate(db: AsyncSession) -> dict:
 
 
 async def fire_and_forget_track_search(
-    user_id: Optional[int],
+    user_id: int | None,
     query: str,
-    filters_applied: Optional[dict] = None,
+    filters_applied: dict | None = None,
     results_count: int = 0,
-    clicked_property_id: Optional[int] = None,
-    session_id: Optional[str] = None,
+    clicked_property_id: int | None = None,
+    session_id: str | None = None,
 ) -> None:
     """Fire-and-forget: record a search with its own DB session."""
     from app.core.database import AsyncSessionLocal
@@ -507,10 +508,10 @@ async def fire_and_forget_track_search(
 
 
 async def fire_and_forget_track_user_event(
-    user_id: Optional[int],
+    user_id: int | None,
     event_type: str,
-    event_data: Optional[dict] = None,
-    session_id: Optional[str] = None,
+    event_data: dict | None = None,
+    session_id: str | None = None,
 ) -> None:
     """Fire-and-forget: record a user event with its own DB session."""
     from app.core.database import AsyncSessionLocal
@@ -523,7 +524,7 @@ async def fire_and_forget_track_user_event(
                 session_id=session_id or "unknown",
                 event_type=event_type,
                 event_data=event_data or {},
-                client_timestamp=datetime.now(timezone.utc),
+                client_timestamp=datetime.now(UTC),
             )
     except Exception:
         logger.warning(
@@ -538,7 +539,7 @@ async def fire_and_forget_track_price_change(
     old_price: float,
     new_price: float,
     changed_by_id: int,
-    reason: Optional[str] = None,
+    reason: str | None = None,
 ) -> None:
     """Fire-and-forget: record a price change with its own DB session."""
     from app.core.database import AsyncSessionLocal
@@ -565,8 +566,8 @@ async def fire_and_forget_track_verification_outcome(
     verification_id: int,
     ai_prediction: dict,
     human_decision: str,
-    was_correct: Optional[bool] = None,
-    ground_truth_notes: Optional[str] = None,
+    was_correct: bool | None = None,
+    ground_truth_notes: str | None = None,
 ) -> None:
     """Fire-and-forget: record a verification outcome with its own DB session."""
     from app.core.database import AsyncSessionLocal

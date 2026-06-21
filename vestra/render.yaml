@@ -1,8 +1,22 @@
-# Render Blueprint — Deploy entire Vestra stack
-# Deploy: Connect repo to render.com — auto-deploys on push
+# ═══════════════════════════════════════════════════════════════════════════════
+# VESTRA — Render Blueprint (Production Deployment)
+# AI-Powered Property Trust & Operating System for Africa
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Deploy: Connect repo to render.com — auto-deploys on push to main branch.
+# This blueprint manages the entire stack: API, Frontend, Redis, PostgreSQL.
+#
+# IMPORTANT: After initial deploy, configure these manually in Render dashboard:
+#   1. Set environment variables marked "sync: false" below (they won't sync from env)
+#   2. Set up Custom Domain + SSL certificate for vestra.co.ke
+#   3. Configure PostgreSQL automated backups (Settings > Automated Backups)
+#   4. Set up Persistent Disk if needed for uploads
+# ═══════════════════════════════════════════════════════════════════════════════
 
 services:
-  # ── Backend API ────────────────────────────────────────────────────────────
+  # ═════════════════════════════════════════════════════════════════════════════
+  # Backend API — FastAPI + Gunicorn
+  # ═════════════════════════════════════════════════════════════════════════════
   - type: web
     name: vestra-api
     runtime: docker
@@ -10,14 +24,323 @@ services:
     branch: main
     rootDir: backend
     dockerfilePath: backend/Dockerfile
-    plan: standard  # 1GB RAM, 2 CPUs
-    numInstances: 2
+
+    # ── Instance Configuration ────────────────────────────────────────────────
+    plan: standard  # 1GB RAM, 2 vCPUs ($25/mo)
+    numInstances: 2  # Minimum 2 for high availability
+
+    # ── Auto-scaling ──────────────────────────────────────────────────────────
+    # Scales up to 6 instances when CPU exceeds 70%
+    scaling:
+      minInstances: 2
+      maxInstances: 6
+      targetMemoryPercent: 75
+      targetCPUPercent: 70
+
+    # ── Health Check ──────────────────────────────────────────────────────────
+    # Render uses this endpoint to determine if the service is healthy.
+    # A 200 response = healthy. Any other status or timeout = restart.
     healthCheckPath: /health
+    healthCheckTimeout: 100  # seconds (Render default is 5, increase for cold starts)
+
+    # ── Deployment ────────────────────────────────────────────────────────────
+    # Auto-deploy on push to main. Preview environments for PRs.
+    autoDeploy: true
+    deployCommand: alembic upgrade head  # Run DB migrations on deploy
+
+    # ── Environment Variables ─────────────────────────────────────────────────
     envVars:
+      # -- Core --
       - key: ENVIRONMENT
         value: production
       - key: DEBUG
         value: "false"
+      - key: APP_NAME
+        value: Vestra
+      - key: APP_VERSION
+        value: 4.0.0
+      - key: BASE_URL
+        value: https://vestra.co.ke
+      - key: CORS_ORIGINS
+        value: https://vestra.co.ke,https://app.vestra.co.ke,https://www.vestra.co.ke
+
+      # -- Database (auto-linked from PostgreSQL service below) --
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vestra-db
+          property: connectionString
+      - key: DATABASE_POOL_SIZE
+        value: "20"
+      - key: DATABASE_MAX_OVERFLOW
+        value: "40"
+      - key: DATABASE_POOL_RECYCLE
+        value: "3600"
+
+      # -- Redis (auto-linked from Redis service below) --
+      - key: REDIS_URL
+        fromService:
+          name: vestra-redis
+          type: redis
+          property: connectionString
+      - key: REDIS_MAX_CONNECTIONS
+        value: "50"
+
+      # -- Auth --
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "7"
+
+      # -- Gunicorn --
+      - key: GUNICORN_WORKERS
+        value: "3"
+      - key: GUNICORN_BACKLOG
+        value: "2048"
+      - key: GUNICORN_WORKER_CONNECTIONS
+        value: "1000"
+      - key: GUNICORN_MAX_REQUESTS
+        value: "10000"
+      - key: GUNICORN_TIMEOUT
+        value: "30"
+      - key: GUNICORN_GRACEFUL_TIMEOUT
+        value: "10"
+      - key: GUNICORN_KEEPALIVE
+        value: "5"
+      - key: GUNICORN_LOG_LEVEL
+        value: "warning"
+
+      # -- Rate Limiting --
+      - key: RATE_LIMIT_AUTH_PER_MINUTE
+        value: "10"
+      - key: RATE_LIMIT_GENERAL_PER_MINUTE
+        value: "120"
+      - key: RATE_LIMIT_ADMIN_PER_MINUTE
+        value: "300"
+
+      # -- Security --
+      - key: CSP_ENABLED
+        value: "true"
+      - key: CSRF_ENABLED
+        value: "true"
+      - key: ENCRYPTION_KEY
+        sync: false  # Must be set manually — generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - key: SESSION_IDLE_TIMEOUT_MINUTES
+        value: "30"
+      - key: MAX_CONCURRENT_SESSIONS
+        value: "5"
+      - key: ACCOUNT_LOCKOUT_MAX_ATTEMPTS
+        value: "5"
+      - key: ACCOUNT_LOCKOUT_DURATION_MINUTES
+        value: "15"
+
+      # -- CAPTCHA (Cloudflare Turnstile) --
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
+      - key: TURNSTILE_SITE_KEY
+        sync: false
+
+      # -- Sentry (Error Tracking) --
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_TRACES_SAMPLE_RATE
+        value: "0.1"
+
+      # -- Monitoring --
+      - key: PROMETHEUS_ENABLED
+        value: "true"
+      - key: HEALTH_CHECK_TOKEN
+        sync: false
+
+      # -- M-Pesa Daraja API --
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_SHORTCODE
+        value: "174379"
+      - key: MPESA_PASSKEY
+        sync: false
+      - key: MPESA_CALLBACK_URL
+        value: https://vestra.co.ke/api/payments/mpesa/callback
+      - key: MPESA_ENV
+        value: production
+
+      # -- Stripe --
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+
+      # -- PayPal --
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_ENV
+        value: production
+
+      # -- Airtel Money --
+      - key: AIRTEL_CLIENT_ID
+        sync: false
+      - key: AIRTEL_CLIENT_SECRET
+        sync: false
+      - key: AIRTEL_ENV
+        value: production
+      - key: AIRTEL_CALLBACK_URL
+        value: https://vestra.co.ke/api/payments/airtel/callback
+
+      # -- Cryptocurrency --
+      - key: CRYPTO_WALLET_ADDRESS_USDT
+        sync: false
+      - key: CRYPTO_RPC_URL
+        value: https://polygon-rpc.com
+      - key: CRYPTO_ENABLED
+        value: "false"
+
+      # -- Bank Transfer --
+      - key: BANK_ACCOUNT_NAME
+        value: "Vestra Technologies Ltd"
+      - key: BANK_ACCOUNT_NUMBER_KCB
+        sync: false
+      - key: BANK_ACCOUNT_NUMBER_EQUITY
+        sync: false
+      - key: BANK_ACCOUNT_NUMBER_COOP
+        sync: false
+      - key: BANK_ACCOUNT_NUMBER_NCBA
+        sync: false
+      - key: BANK_ACCOUNT_NUMBER_ABSA
+        sync: false
+
+      # -- Email (SMTP) --
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        value: noreply@vestra.co.ke
+      - key: SMTP_FROM_NAME
+        value: Vestra
+
+      # -- WhatsApp Business API --
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_BUSINESS_ID
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+
+      # -- Uploads --
+      - key: UPLOAD_DIR
+        value: /var/lib/vestra/uploads
+      - key: MAX_FILE_SIZE
+        value: "10485760"
+      - key: REDIS_PASSWORD
+        sync: false
+
+      # -- Workers --
+      - key: WORKERS
+        value: "4"
+      - key: BATCH_SIZE
+        value: "5"
+
+      # -- Celery --
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  # Frontend — Next.js Standalone Build
+  # ═════════════════════════════════════════════════════════════════════════════
+  - type: web
+    name: vestra-frontend
+    runtime: docker
+    repo: https://github.com/your-org/vestra
+    branch: main
+    rootDir: frontend-build
+    dockerfilePath: frontend-build/Dockerfile
+
+    # ── Instance Configuration ────────────────────────────────────────────────
+    plan: starter  # 512MB RAM, 1 vCPU
+    numInstances: 2  # Minimum 2 for redundancy
+
+    # ── Auto-scaling ──────────────────────────────────────────────────────────
+    scaling:
+      minInstances: 2
+      maxInstances: 4
+      targetMemoryPercent: 80
+      targetCPUPercent: 75
+
+    # ── Health Check ──────────────────────────────────────────────────────────
+    healthCheckPath: /
+    healthCheckTimeout: 30
+
+    # ── Deployment ────────────────────────────────────────────────────────────
+    autoDeploy: true
+
+    # ── Environment Variables ─────────────────────────────────────────────────
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://vestra-api.onrender.com
+      - key: NEXT_PUBLIC_BASE_URL
+        value: https://vestra.co.ke
+      - key: NEXT_PUBLIC_APP_NAME
+        value: Vestra
+      - key: NEXT_PUBLIC_APP_VERSION
+        value: 4.0.0
+      - key: NEXT_PUBLIC_TURNSTILE_SITE_KEY
+        sync: false
+      - key: NEXT_PUBLIC_SENTRY_DSN
+        sync: false
+      - key: NEXT_PUBLIC_VAPID_PUBLIC_KEY
+        sync: false
+      - key: NEXT_PUBLIC_WS_URL
+        value: wss://vestra-api.onrender.com
+      - key: NEXT_PUBLIC_ENABLE_CRYPTO
+        value: "false"
+      - key: NEXT_PUBLIC_ENABLE_WHATSAPP
+        value: "false"
+      - key: NEXT_PUBLIC_ENABLE_AI_CHAT
+        value: "true"
+      # - key: NEXT_PUBLIC_GA_ID          # Google Analytics — uncomment if needed
+      #   sync: false
+      # - key: NEXT_PUBLIC_PLAUSIBLE_DOMAIN  # Plausible Analytics — uncomment if needed
+      #   value: vestra.co.ke
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  # Background Worker
+  # ═════════════════════════════════════════════════════════════════════════════
+  - type: worker
+    name: vestra-worker
+    runtime: docker
+    repo: https://github.com/your-org/vestra
+    branch: main
+    rootDir: backend
+    dockerfilePath: backend/Dockerfile
+    plan: standard
+    numInstances: 1
+
+    # ── Health Check ──────────────────────────────────────────────────────────
+    # Workers don't serve HTTP, so Render uses a TCP health check
+    healthCheckPath: /health
+    healthCheckTimeout: 30
+
+    # ── Environment Variables ─────────────────────────────────────────────────
+    envVars:
+      - key: ENVIRONMENT
+        value: production
       - key: DATABASE_URL
         fromDatabase:
           name: vestra-db
@@ -28,48 +351,60 @@ services:
           type: redis
           property: connectionString
       - key: SECRET_KEY
-        generateValue: true
-      - key: BASE_URL
-        value: https://vestra.co.ke
-      - key: CORS_ORIGINS
-        value: https://vestra.co.ke,https://www.vestra.co.ke
-      - key: GUNICORN_WORKERS
+        fromService:
+          name: vestra-api
+          type: web
+          envVarKey: SECRET_KEY
+      - key: WORKERS
         value: "4"
+      - key: BATCH_SIZE
+        value: "5"
       - key: SMTP_HOST
         sync: false
-      - key: MPESA_CONSUMER_KEY
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
         sync: false
-      - key: MPESA_CONSUMER_SECRET
+      - key: SMTP_PASSWORD
         sync: false
-      - key: MPESA_PASSKEY
-        sync: false
+      - key: SMTP_FROM_EMAIL
+        value: noreply@vestra.co.ke
       - key: REDIS_PASSWORD
         sync: false
-      - key: WHATSAPP_ACCESS_TOKEN
-        sync: false
 
-  # ── Frontend (web service using standalone Docker build) ──────────────────
-  - type: web
-    name: vestra-frontend
-    runtime: docker
-    repo: https://github.com/your-org/vestra
-    branch: main
-    rootDir: frontend-build
-    dockerfilePath: frontend-build/Dockerfile
-    plan: starter  # 512MB RAM, 1 CPU
-    healthCheckPath: /
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        value: https://vestra-api.onrender.com
-
-  # ── Redis ──────────────────────────────────────────────────────────────────
+  # ═════════════════════════════════════════════════════════════════════════════
+  # Redis — Cache, Sessions, Rate Limiting
+  # ═════════════════════════════════════════════════════════════════════════════
   - type: redis
     name: vestra-redis
-    plan: starter  # 256MB
-    ipAllowList: []
+    plan: starter  # 256MB RAM ($15/mo)
+    ipAllowList: []  # Only allow connections from within Render network
 
-  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+    # ── Backup Schedule ───────────────────────────────────────────────────────
+    # Automatic daily backups retained for 7 days
+    # Configured in Render Dashboard > Redis > Settings > Automated Backups
+    # backupRetention: 7  (uncomment once Render supports this in blueprint)
+    # backupSchedule: "0 2 * * *"  (daily at 2 AM local)
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  # PostgreSQL — Primary Database
+  # ═════════════════════════════════════════════════════════════════════════════
   - type: postgres
     name: vestra-db
-    plan: starter  # 1GB storage
+    plan: starter  # 1GB storage, FREE tier ($7/mo)
+
+    # ── IP Access ─────────────────────────────────────────────────────────────
+    # Empty = only accessible from Render internal network (secure by default)
     ipAllowList: []
+
+    # ── High Availability ─────────────────────────────────────────────────────
+    # Enable in Render Dashboard > PostgreSQL > Settings > High Availability
+    # This provisions a read replica for failover (+$20/mo)
+    # highAvailability: true  (uncomment once Render supports this in blueprint)
+
+    # ── Backup Schedule ───────────────────────────────────────────────────────
+    # Automated daily backups with 7-day retention
+    # Render supports configuring this in the dashboard:
+    #   Dashboard > PostgreSQL > vestra-db > Settings > Automated Backups
+    # backupRetention: 7  (uncomment once Render supports this in blueprint)
+    # backupSchedule: "0 1 * * *"  (daily at 1 AM local)

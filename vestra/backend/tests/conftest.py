@@ -20,11 +20,14 @@ os.environ.setdefault("RATE_LIMIT_ADMIN_PER_MINUTE", "99999")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")  # Use DB 1 for tests
 
 # ── Test Database URL ────────────────────────────────────────────────────────────
-# Use a separate test database. Set TEST_DATABASE_URL env var to override.
+# Use a separate test database. Override DATABASE_URL so the FastAPI app
+# also connects to the test DB. Set TEST_DATABASE_URL env var to override.
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/vestra_test",
 )
+# CRITICAL: Override DATABASE_URL so the FastAPI app connects to the test DB.
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
 from app.core.config import settings
 from app.core.database import Base
@@ -37,7 +40,15 @@ _mw.general_limiter.max_requests = 999_999
 _mw.admin_limiter.max_requests = 999_999
 
 # Create test engine and session factory (uses same DB as DATABASE_URL override above)
-test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, pool_size=5, max_overflow=10)
+# statement_cache_size=0 prevents "cached statement plan is invalid" errors
+# when the schema is dropped and recreated between tests.
+test_engine = create_async_engine(
+    TEST_DATABASE_URL,
+    echo=False,
+    pool_size=5,
+    max_overflow=10,
+    connect_args={"statement_cache_size": 0},
+)
 TestSessionLocal = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -49,12 +60,13 @@ def event_loop():
     loop.close()
 
 
-@pytest_asyncio.fixture(autouse=True)
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def setup_database():
-    """Drop and recreate all tables before each test for a clean schema."""
+    """Create all tables once per test session. Each test uses unique data
+    (timestamp-based emails/phones) so no per-test cleanup is needed."""
     from sqlalchemy import text as sa_text
+    import app.models  # noqa: F401 - ensure all models registered with Base.metadata
     async with test_engine.begin() as conn:
-        # CASCADE drop to handle foreign key constraints cleanly
         await conn.execute(sa_text("DROP SCHEMA public CASCADE"))
         await conn.execute(sa_text("CREATE SCHEMA public"))
         await conn.execute(sa_text("GRANT ALL ON SCHEMA public TO postgres"))

@@ -7,20 +7,18 @@ with real-time system health, metrics, and alerting data.
 
 from __future__ import annotations
 
-import time
 import os
-import psutil
-from datetime import datetime, timezone
+import time
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import psutil
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.core.redis import get_redis
 from app.core.security import get_current_admin
-from app.models.user import User
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
@@ -186,11 +184,12 @@ async def full_health_check(
     if db_ok:
         try:
             async with AsyncSessionLocal() as db:
+                from sqlalchemy import func, select
+
+                from app.models.document import Verification
+                from app.models.payment import Payment
                 from app.models.property import Property
                 from app.models.user import User
-                from app.models.payment import Payment
-                from app.models.document import Verification
-                from sqlalchemy import select, func
 
                 business.total_properties = (await db.execute(
                     select(func.count()).select_from(Property)
@@ -204,7 +203,7 @@ async def full_health_check(
                     select(func.count()).select_from(Verification)
                 )).scalar() or 0
 
-                today = datetime.now(timezone.utc).date()
+                today = datetime.now(UTC).date()
                 payments_today = (await db.execute(
                     select(func.count(), func.sum(Payment.amount))
                     .where(func.date(Payment.created_at) == today)
@@ -308,7 +307,7 @@ async def database_metrics(
                 ],
             }
     except Exception as e:
-        raise HTTPException(500, f"Database metrics unavailable: {e}")
+        raise HTTPException(500, f"Database metrics unavailable: {e}") from e
 
 
 @router.get("/health/redis")
@@ -336,4 +335,4 @@ async def redis_metrics(
             "ops_per_sec": info.get("instantaneous_ops_per_sec", 0),
         }
     except Exception as e:
-        raise HTTPException(500, f"Redis metrics unavailable: {e}")
+        raise HTTPException(500, f"Redis metrics unavailable: {e}") from e

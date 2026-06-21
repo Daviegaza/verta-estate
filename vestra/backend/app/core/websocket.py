@@ -9,6 +9,7 @@ Architecture:
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 
@@ -128,10 +129,8 @@ class ConnectionManager:
         r = await get_redis()
         if r is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             await r.expire(f"{ONLINE_PREFIX}{user_id}", ONLINE_TTL)
-        except Exception:
-            pass
 
     async def is_user_online(self, user_id: int) -> bool:
         """Check if a user is currently online."""
@@ -147,15 +146,15 @@ class ConnectionManager:
         """Batch-check online status for a list of user IDs."""
         r = await get_redis()
         if r is None:
-            return {uid: False for uid in user_ids}
+            return dict.fromkeys(user_ids, False)
         try:
             pipe = r.pipeline()
             for uid in user_ids:
                 pipe.exists(f"{ONLINE_PREFIX}{uid}")
             results = await pipe.execute()
-            return dict(zip(user_ids, (bool(x) for x in results)))
+            return dict(zip(user_ids, (bool(x) for x in results), strict=False))
         except Exception:
-            return {uid: False for uid in user_ids}
+            return dict.fromkeys(user_ids, False)
 
     # ── Query helpers ───────────────────────────────────────────────────────
 

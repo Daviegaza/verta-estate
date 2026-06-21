@@ -3,31 +3,35 @@ Subscription API endpoints — plans, upgrade, downgrade, cancel, M-Pesa payment
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+import contextlib
+from typing import TYPE_CHECKING
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
-from app.models.user import User, UserRole
+from app.core.security import get_current_admin, get_current_user
 from app.models.payment import PaymentPurpose, PaymentStatus
+from app.models.user import User, UserRole
+from app.services.payment_service import initiate_mpesa_payment
 from app.services.subscription_service import (
+    GRACE_PERIOD_DAYS,
     PLANS,
-    get_all_plans_for_role,
-    get_subscription_price,
-    get_user_subscription,
-    get_subscription_orm,
-    create_subscription,
-    upgrade_subscription,
-    cancel_subscription,
-    renew_subscription,
-    check_subscription_active,
-    get_listing_limit,
-    process_auto_renewals,
     ROLE_REQUIRES_SUBSCRIPTION,
     TRIAL_DAYS,
-    GRACE_PERIOD_DAYS,
+    cancel_subscription,
+    check_subscription_active,
+    create_subscription,
+    get_all_plans_for_role,
+    get_listing_limit,
+    get_subscription_orm,
+    get_subscription_price,
+    get_user_subscription,
+    process_auto_renewals,
+    upgrade_subscription,
 )
-from app.services.payment_service import initiate_mpesa_payment
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/subscriptions", tags=["Subscriptions"])
 
@@ -215,7 +219,7 @@ async def cancel_my_subscription(
             "tier": sub.tier.value,
         }
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 # ── Reactivate ────────────────────────────────────────────────────────────────
@@ -254,26 +258,23 @@ async def reactivate_subscription(
 async def list_all_subscriptions(
     skip: int = 0,
     limit: int = 50,
-    tier: str = None,
-    status: str = None,
+    tier: str | None = None,
+    status: str | None = None,
     admin=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin: List all subscriptions with filters."""
     from sqlalchemy import select
-    from app.models.subscription import Subscription, SubscriptionTier, SubscriptionStatus
+
+    from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
 
     query = select(Subscription).order_by(Subscription.created_at.desc())
     if tier:
-        try:
+        with contextlib.suppress(ValueError):
             query = query.where(Subscription.tier == SubscriptionTier(tier))
-        except ValueError:
-            pass
     if status:
-        try:
+        with contextlib.suppress(ValueError):
             query = query.where(Subscription.status == SubscriptionStatus(status))
-        except ValueError:
-            pass
 
     result = await db.execute(query.offset(skip).limit(limit))
     subs = result.scalars().all()

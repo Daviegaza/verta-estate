@@ -3,7 +3,9 @@ CAPTCHA verification service using Cloudflare Turnstile (free tier).
 Validates user-submitted tokens against Cloudflare's siteverify endpoint.
 """
 import logging
+
 import httpx
+
 from app.core.config import settings
 
 logger = logging.getLogger("vestra")
@@ -50,6 +52,4 @@ async def verify_turnstile(token: str) -> bool:
     except Exception as e:
         logger.error('{"event":"turnstile_error","error":"%s"}', str(e))
         # Fail open in non-production to avoid blocking dev
-        if settings.ENVIRONMENT != "production":
-            return True
-        return False
+        return settings.ENVIRONMENT != "production"

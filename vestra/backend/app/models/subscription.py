@@ -5,20 +5,22 @@ Buyers are always FREE.
 from __future__ import annotations
 
 import enum
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Float, Numeric, ForeignKey
+
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from app.core.database import Base
 
 
-class SubscriptionTier(str, enum.Enum):
+class SubscriptionTier(enum.StrEnum):
     free = "free"
     basic = "basic"
     pro = "pro"
     premium = "premium"
 
 
-class SubscriptionStatus(str, enum.Enum):
+class SubscriptionStatus(enum.StrEnum):
     active = "active"
     past_due = "past_due"        # Payment failed, in grace period
     cancelled = "cancelled"

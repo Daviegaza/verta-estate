@@ -128,7 +128,7 @@ function MarketContent() {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [query, page, useAi,
     filters.city, filters.property_type, filters.listing_type,
     filters.min_price, filters.max_price, filters.bedrooms, filters.verified_only,

@@ -17,10 +17,6 @@ function DisputesContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadDisputes();
-  }, []);
-
   const loadDisputes = async () => {
     setLoading(true);
     try {
@@ -30,6 +26,10 @@ function DisputesContent() {
       setError('Failed to load disputes');
     } finally { setLoading(false); }
   };
+
+  useEffect(() => {
+    loadDisputes();
+  }, []);
 
   if (loading) return <div className="flex justify-center py-32"><Spinner size="lg" /></div>;
 

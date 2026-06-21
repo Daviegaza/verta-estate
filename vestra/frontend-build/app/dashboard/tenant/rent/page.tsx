@@ -108,7 +108,7 @@ function PayRentContent() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-900">M-Pesa STK Push</p>
-                  <p className="text-xs text-gray-500">You'll receive a prompt on your phone to enter your PIN</p>
+                  <p className="text-xs text-gray-500">You&apos;ll receive a prompt on your phone to enter your PIN</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">

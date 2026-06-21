@@ -28,12 +28,6 @@ function MyPropertiesContent() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'verified' | 'unverified' | 'sale' | 'rent'>('all');
 
-  useEffect(() => {
-    if (!isHydrated) return;
-    if (!isAuthenticated) { router.push('/auth/login'); return; }
-    loadProperties();
-  }, [isHydrated, isAuthenticated]);
-
   const loadProperties = async () => {
     try {
       const props = await api.getMyProperties();
@@ -44,6 +38,12 @@ function MyPropertiesContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (!isAuthenticated) { router.push('/auth/login'); return; }
+    loadProperties();
+  }, [isHydrated, isAuthenticated]);
 
   const filtered = properties.filter((p) => {
     switch (filter) {

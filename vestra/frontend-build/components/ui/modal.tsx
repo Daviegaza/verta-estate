@@ -205,7 +205,7 @@ ModalHeader.displayName = 'ModalHeader';
 
 // ─── ModalBody ──────────────────────────────────────────────────────────────
 
-interface ModalBodyProps extends React.HTMLAttributes<HTMLDivElement> {}
+type ModalBodyProps = React.HTMLAttributes<HTMLDivElement>;
 
 function ModalBody({ className, children, ...props }: ModalBodyProps) {
   return (
@@ -222,7 +222,7 @@ ModalBody.displayName = 'ModalBody';
 
 // ─── ModalFooter ────────────────────────────────────────────────────────────
 
-interface ModalFooterProps extends React.HTMLAttributes<HTMLDivElement> {}
+type ModalFooterProps = React.HTMLAttributes<HTMLDivElement>;
 
 function ModalFooter({ className, children, ...props }: ModalFooterProps) {
   return (

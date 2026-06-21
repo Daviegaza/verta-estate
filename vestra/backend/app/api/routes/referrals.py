@@ -3,21 +3,23 @@ Referral API Routes — referral code management, leaderboard, and payout claimi
 """
 from __future__ import annotations
 
+import asyncio
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
 
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
-from app.services.referral_engine import (
-    get_user_referral_stats,
-    get_referral_leaderboard,
-    claim_referral_earnings,
-    get_referrer_summary,
-)
+from app.core.security import get_current_admin, get_current_user
 from app.services.analytics_service import fire_and_forget_track_user_event
-from app.models.user import UserRole
-import asyncio
+from app.services.referral_engine import (
+    claim_referral_earnings,
+    get_referral_leaderboard,
+    get_referrer_summary,
+    get_user_referral_stats,
+)
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/referrals", tags=["Referrals"])
 
@@ -32,8 +34,8 @@ async def get_my_referral_code(
     Returns: referral code, share link, signups, conversions, earnings.
     """
     # Ensure referral code exists
-    from app.services.referral_engine import generate_referral_code
     from app.models.user import User
+    from app.services.referral_engine import generate_referral_code
 
     user_result = await db.execute(
         __import__("sqlalchemy").select(User).where(User.id == current_user.id)
@@ -49,7 +51,7 @@ async def get_my_referral_code(
     referred_by_info = await get_referrer_summary(db, current_user.id)
 
     # Track analytics event
-    asyncio.create_task(
+    asyncio.create_task(  # noqa: RUF006
         fire_and_forget_track_user_event(
             user_id=current_user.id,
             event_type="referral_code_viewed",
@@ -78,7 +80,7 @@ async def referral_leaderboard(
 
 @router.post("/claim")
 async def claim_earnings(
-    amount_kes: Optional[float] = Query(None, description="Amount to claim, or null for all"),
+    amount_kes: float | None = Query(None, description="Amount to claim, or null for all"),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -97,9 +99,11 @@ async def admin_referral_summary(
     db: AsyncSession = Depends(get_db),
 ):
     """Admin view: top-level referral program stats."""
-    from app.models.referral import Referral, ReferralReward
+    from sqlalchemy import func as sa_func
+    from sqlalchemy import select as sa_select
+
     from app.models.enterprise import Payout
-    from sqlalchemy import select as sa_select, func as sa_func
+    from app.models.referral import Referral, ReferralReward
 
     # Total referral signups
     total_signups = await db.execute(sa_select(sa_func.count(Referral.id)))

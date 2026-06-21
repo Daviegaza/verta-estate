@@ -7,16 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/card';
 import api from '@/lib/api';
+import type { KYCVerification } from '@/types';
 import { CheckCircle, XCircle, AlertCircle, Clock, Shield, Search, ChevronDown } from 'lucide-react';
-
-interface KYCItem {
-  id: number;
-  user_id: number;
-  id_type: string;
-  id_number: string;
-  status: string;
-  submitted_at: string;
-}
 
 export default function AdminKYCPage() {
   return (
@@ -27,20 +19,16 @@ export default function AdminKYCPage() {
 }
 
 function AdminKYCPageContent() {
-  const [kycItems, setKycItems] = useState<KYCItem[]>([]);
+  const [kycItems, setKycItems] = useState<KYCVerification[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedKYC, setSelectedKYC] = useState<KYCItem | null>(null);
+  const [selectedKYC, setSelectedKYC] = useState<KYCVerification | null>(null);
   const [reviewStatus, setReviewStatus] = useState<'approved' | 'rejected' | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [reviewing, setReviewing] = useState(false);
   const [filter, setFilter] = useState('pending');
   const [message, setMessage] = useState('');
-
-  useEffect(() => {
-    loadKYCPending();
-  }, [filter]);
 
   const loadKYCPending = async () => {
     setLoading(true);
@@ -48,7 +36,7 @@ function AdminKYCPageContent() {
     try {
       const data = await api.getPendingKYC(50);
       if (data && data.items) {
-        setKycItems(data.items.filter((item: KYCItem) => {
+        setKycItems(data.items.filter((item: KYCVerification) => {
           if (filter === 'all') return true;
           return item.status === filter;
         }));
@@ -60,6 +48,10 @@ function AdminKYCPageContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadKYCPending();
+  }, [filter]);
 
   const handleReview = async (kycId: number, status: 'approved' | 'rejected') => {
     setReviewing(true);
@@ -198,7 +190,7 @@ function AdminKYCPageContent() {
                     <td className="px-6 py-3 font-mono text-xs">{kyc.id_number}</td>
                     <td className="px-6 py-3">{statusBadge(kyc.status)}</td>
                     <td className="px-6 py-3 text-xs text-gray-400">
-                      {kyc.submitted_at ? new Date(kyc.submitted_at).toLocaleDateString() : '-'}
+                      {kyc.created_at ? new Date(kyc.created_at).toLocaleDateString() : '-'}
                     </td>
                     <td className="px-6 py-3">
                       <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${

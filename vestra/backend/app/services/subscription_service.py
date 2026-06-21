@@ -6,14 +6,28 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
+
 from sqlalchemy import select
 
-from app.models.subscription import Subscription, SubscriptionTier, SubscriptionStatus
+from app.core.redis import cache_delete, cache_get, cache_set
+from app.models.subscription import Subscription, SubscriptionStatus, SubscriptionTier
 from app.models.user import UserRole
-from app.core.redis import cache_get, cache_set, cache_delete
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+# ── Background task tracking (prevents GC of async tasks) ───────────────────
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _fire_and_forget(coro):
+    """Fire a coroutine as a background task with persistent reference."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
 
 logger = logging.getLogger("vestra")
 
@@ -140,7 +154,7 @@ def get_subscription_price(role: str, tier: str) -> float:
 
 # ── Subscription CRUD ─────────────────────────────────────────────────────────
 
-async def get_user_subscription(db: AsyncSession, user_id: int) -> Optional[Subscription]:
+async def get_user_subscription(db: AsyncSession, user_id: int) -> Subscription | None:
     """Get a user's active subscription, with Redis caching."""
     cache_key = f"vestra:sub:{user_id}"
     cached = await cache_get(cache_key)
@@ -167,7 +181,7 @@ async def get_user_subscription(db: AsyncSession, user_id: int) -> Optional[Subs
     return None
 
 
-async def get_subscription_orm(db: AsyncSession, user_id: int) -> Optional[Subscription]:
+async def get_subscription_orm(db: AsyncSession, user_id: int) -> Subscription | None:
     """Get the actual ORM Subscription object (for writes)."""
     result = await db.execute(
         select(Subscription).where(Subscription.user_id == user_id)
@@ -181,11 +195,11 @@ async def create_subscription(
     tier: str,
     amount_kes: float,
     payment_method: str = "mpesa",
-    mpesa_phone: Optional[str] = None,
+    mpesa_phone: str | None = None,
     trial: bool = False,
 ) -> Subscription:
     """Create a new subscription for a user."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     period_start = now
     period_end = now + timedelta(days=TRIAL_DAYS if trial else 30)
 
@@ -215,12 +229,12 @@ async def create_subscription(
     logger.info('{"event":"subscription_created","user_id":%d,"tier":"%s"}', user_id, tier)
 
     # ── Fire event bus: subscription created ───────────────────────────────
-    asyncio.create_task(
+    _fire_and_forget(
         _bg_emit_subscription_event(sub, "created")
     )
 
     # ── Fire analytics: subscription_started ──────────────────────────────
-    asyncio.create_task(
+    _fire_and_forget(
         _bg_track_subscription_analytics(user_id, "subscription_started", tier, float(sub.amount_kes))
     )
 
@@ -257,7 +271,7 @@ async def upgrade_subscription(
                 user_id, old_tier, new_tier)
 
     # ── Fire analytics: subscription_upgraded ─────────────────────────────
-    asyncio.create_task(
+    _fire_and_forget(
         _bg_track_subscription_analytics(user_id, "subscription_upgraded", new_tier, float(sub.amount_kes),
                                          extra={"from_tier": old_tier})
     )
@@ -273,7 +287,7 @@ async def cancel_subscription(db: AsyncSession, user_id: int) -> Subscription:
 
     sub.auto_renew = False
     sub.status = SubscriptionStatus.cancelled
-    sub.cancelled_at = datetime.now(timezone.utc)
+    sub.cancelled_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(sub)
@@ -281,7 +295,7 @@ async def cancel_subscription(db: AsyncSession, user_id: int) -> Subscription:
     logger.info('{"event":"subscription_cancelled","user_id":%d}', user_id)
 
     # ── Fire analytics: subscription_cancelled ────────────────────────────
-    asyncio.create_task(
+    _fire_and_forget(
         _bg_track_subscription_analytics(user_id, "subscription_cancelled",
                                          sub.tier.value if sub.tier else "unknown",
                                          float(sub.amount_kes))
@@ -298,7 +312,7 @@ async def renew_subscription(
     if not sub:
         raise ValueError("No subscription found")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sub.status = SubscriptionStatus.active
     sub.current_period_start = now
     sub.current_period_end = now + timedelta(days=30)
@@ -313,14 +327,14 @@ async def renew_subscription(
                 user_id, payment_id)
 
     # ── Fire event bus: subscription renewed ───────────────────────────────
-    asyncio.create_task(
+    _fire_and_forget(
         _bg_emit_subscription_event(sub, "renewed")
     )
 
     return sub
 
 
-async def mark_renewal_failed(db: AsyncSession, user_id: int) -> Optional[Subscription]:
+async def mark_renewal_failed(db: AsyncSession, user_id: int) -> Subscription | None:
     """Mark a failed renewal attempt. Cancel subscription after max failures."""
     sub = await get_subscription_orm(db, user_id)
     if not sub:
@@ -349,14 +363,14 @@ async def process_auto_renewals(db: AsyncSession) -> list[dict]:
     Called by a cron job or scheduled task.
     Initiates M-Pesa STK Push for each expiring subscription.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # Find subscriptions expiring within 1 day that have auto_renew enabled
     cutoff = now + timedelta(days=1)
 
     result = await db.execute(
         select(Subscription).where(
             Subscription.status == SubscriptionStatus.active,
-            Subscription.auto_renew == True,
+            Subscription.auto_renew,
             Subscription.current_period_end <= cutoff,
         )
     )
@@ -421,7 +435,7 @@ async def check_subscription_active(
         grace_end = sub.get("grace_period_end")
         if grace_end:
             grace_dt = datetime.fromisoformat(grace_end)
-            if datetime.now(timezone.utc) < grace_dt:
+            if datetime.now(UTC) < grace_dt:
                 return True, "grace_period"
         return False, "past_due"
 
@@ -475,9 +489,9 @@ async def _sync_agent_profile(db: AsyncSession, user_id: int, tier: str) -> None
     profile = result.scalar_one_or_none()
     if profile:
         badge_map = {"basic": "bronze", "pro": "gold", "premium": "platinum"}
-        profile.badge_level = badge_map.get(tier, None)
+        profile.badge_level = badge_map.get(tier)
         profile.subscription_tier = tier
-        profile.subscription_expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+        profile.subscription_expires_at = datetime.now(UTC) + timedelta(days=30)
         await db.commit()
 
 
@@ -507,12 +521,12 @@ async def send_subscription_lifecycle_notifications(db: AsyncSession) -> list[di
     """
     from app.models.user import User
     from app.services.notification_service import (
-        send_subscription_expiring_warning,
-        send_subscription_expired,
         send_agent_badge_expiring_warning,
+        send_subscription_expired,
+        send_subscription_expiring_warning,
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     notifications_sent = []
 
     # ── Find subscriptions expiring in ~3 days ────────────────────────────
@@ -628,7 +642,7 @@ async def _bg_track_subscription_analytics(
     event_type: str,
     tier: str,
     amount_kes: float,
-    extra: Optional[dict] = None,
+    extra: dict | None = None,
 ) -> None:
     """Fire-and-forget: track subscription analytics event."""
     from app.services.analytics_service import fire_and_forget_track_user_event
@@ -654,7 +668,7 @@ async def _bg_track_subscription_analytics(
 
 async def _bg_emit_subscription_event(sub, action: str) -> None:
     """Fire-and-forget: emit subscription event."""
-    from app.services.event_bus import emit_event, EVENT_SUBSCRIPTION_CREATED
+    from app.services.event_bus import EVENT_SUBSCRIPTION_CREATED, emit_event
 
     try:
         data = {

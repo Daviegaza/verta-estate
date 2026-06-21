@@ -7,21 +7,27 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import hmac
 import logging
 import uuid
-from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import httpx
 
 from app.core.config import settings
 from app.services.payment_providers import (
-    PaymentProvider, PaymentRequest, PaymentResult, ProviderType,
+    PaymentProvider,
+    PaymentRequest,
+    PaymentResult,
+    ProviderType,
     register_provider,
 )
+
+if TYPE_CHECKING:
+    from decimal import Decimal
 
 logger = logging.getLogger("vestra")
 
@@ -61,7 +67,7 @@ async def close_airtel_client():
         _client = None
 
 
-async def _get_access_token() -> Optional[str]:
+async def _get_access_token() -> str | None:
     """Get OAuth2 access token from Airtel Money API with caching."""
     if not settings.AIRTEL_CLIENT_ID or not settings.AIRTEL_CLIENT_SECRET:
         return None
@@ -141,7 +147,7 @@ class AirtelMoneyProvider(PaymentProvider):
             reference = request.reference or f"AIRTEL-{uuid.uuid4().hex[:10].upper()}"
             phone = _normalize_phone(request.phone_number or "")
             airtel_request_id = str(uuid.uuid4())
-            transaction_id = f"TXN{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:4].upper()}"
+            transaction_id = f"TXN{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:4].upper()}"
 
             payload = {
                 "reference": reference,
@@ -198,10 +204,8 @@ class AirtelMoneyProvider(PaymentProvider):
         except httpx.HTTPStatusError as e:
             logger.error('{"event":"airtel_push_error","status":%d}', e.response.status_code)
             error_body = {}
-            try:
+            with contextlib.suppress(Exception):
                 error_body = e.response.json()
-            except Exception:
-                pass
             return PaymentResult(
                 success=False,
                 provider=self.provider_type.value,
@@ -225,9 +229,7 @@ class AirtelMoneyProvider(PaymentProvider):
         if not signature:
             logger.warning('{"event":"airtel_callback","warning":"no_signature"}')
             # In sandbox, trust without signature
-            if settings.AIRTEL_ENV == "sandbox":
-                return True
-            return False
+            return settings.AIRTEL_ENV == "sandbox"
 
         # HMAC-SHA256 verification with client secret
         if settings.AIRTEL_CLIENT_SECRET:
@@ -273,7 +275,7 @@ class AirtelMoneyProvider(PaymentProvider):
                 raw_response=raw_data,
             )
 
-    async def refund(self, transaction_id: str, amount: Optional[Decimal] = None) -> PaymentResult:
+    async def refund(self, transaction_id: str, amount: Decimal | None = None) -> PaymentResult:
         """Airtel Money refunds require manual processing."""
         return PaymentResult(
             success=False,

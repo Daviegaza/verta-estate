@@ -4,11 +4,14 @@ Fraud Service — fraud reporting, blacklist checking, and investigation tools.
 from __future__ import annotations
 
 import logging
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from typing import TYPE_CHECKING
+
+from sqlalchemy import or_, select
 
 from app.models.trust_safety import FraudReport, FraudReportStatus
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -17,11 +20,11 @@ async def report_fraud(
     db: AsyncSession,
     reporter_id: int,
     description: str,
-    reported_phone: Optional[str] = None,
-    reported_email: Optional[str] = None,
-    reported_title_deed: Optional[str] = None,
-    reported_name: Optional[str] = None,
-    evidence_urls: Optional[list] = None,
+    reported_phone: str | None = None,
+    reported_email: str | None = None,
+    reported_title_deed: str | None = None,
+    reported_name: str | None = None,
+    evidence_urls: list | None = None,
 ) -> FraudReport:
     """Submit a fraud report."""
     report = FraudReport(
@@ -46,10 +49,10 @@ async def report_fraud(
 
 async def check_blacklist(
     db: AsyncSession,
-    phone: Optional[str] = None,
-    email: Optional[str] = None,
-    title_deed: Optional[str] = None,
-    name: Optional[str] = None,
+    phone: str | None = None,
+    email: str | None = None,
+    title_deed: str | None = None,
+    name: str | None = None,
 ) -> dict:
     """
     Check if a phone/email/title_deed/name appears in confirmed fraud reports.
@@ -95,8 +98,8 @@ async def admin_review_fraud(
     report_id: int,
     reviewer_id: int,
     status: FraudReportStatus,
-    notes: Optional[str] = None,
-) -> Optional[FraudReport]:
+    notes: str | None = None,
+) -> FraudReport | None:
     """Admin reviews a fraud report."""
     result = await db.execute(
         select(FraudReport).where(FraudReport.id == report_id)

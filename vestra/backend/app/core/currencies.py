@@ -5,12 +5,11 @@ Configurable per country, with exchange rate management.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 
-class Currency(str, Enum):
+class Currency(StrEnum):
     """Supported currencies across Africa and globally."""
     KES = "KES"  # Kenya Shilling (primary)
     TZS = "TZS"  # Tanzania Shilling
@@ -71,7 +70,7 @@ def convert_currency(
     amount: Decimal | float,
     from_currency: str,
     to_currency: str,
-    rates: Optional[dict[str, Decimal]] = None,
+    rates: dict[str, Decimal] | None = None,
 ) -> Decimal:
     """
     Convert between currencies using exchange rates.
@@ -187,7 +186,7 @@ def get_currency_for_country(country_code: str) -> str:
 
 # ── Auto-detection from IP / Location ─────────────────────────────────────────
 
-def detect_country_from_phone(phone: str) -> Optional[str]:
+def detect_country_from_phone(phone: str) -> str | None:
     """Detect country code from phone number prefix."""
     if not phone:
         return None
@@ -245,8 +244,8 @@ def detect_country_from_ip(ip_address: str) -> str:
 
 def auto_detect_user_config(
     ip_address: str = "41.0.0.0",
-    phone: Optional[str] = None,
-    explicit_country: Optional[str] = None,
+    phone: str | None = None,
+    explicit_country: str | None = None,
 ) -> dict:
     """
     Auto-detect user configuration based on available signals.

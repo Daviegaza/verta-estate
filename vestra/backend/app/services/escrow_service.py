@@ -6,12 +6,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from app.models.trust_safety import EscrowTransaction, EscrowStatus
+from sqlalchemy import func, select
+
+from app.models.trust_safety import EscrowStatus, EscrowTransaction
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -25,9 +28,9 @@ async def create_escrow(
     buyer_id: int,
     seller_id: int,
     amount_kes: float,
-    agent_id: Optional[int] = None,
-    deposit_amount_kes: Optional[float] = None,
-    terms: Optional[str] = None,
+    agent_id: int | None = None,
+    deposit_amount_kes: float | None = None,
+    terms: str | None = None,
 ) -> EscrowTransaction:
     """Create a new escrow transaction for a property purchase."""
     escrow = EscrowTransaction(
@@ -60,7 +63,7 @@ async def create_escrow(
 
 async def deposit_paid(
     db: AsyncSession, escrow_id: int, payment_reference: str,
-) -> Optional[EscrowTransaction]:
+) -> EscrowTransaction | None:
     """Mark the deposit as paid. Only valid from 'initiated' status."""
     escrow = await _get_escrow(db, escrow_id)
     if not escrow:
@@ -79,7 +82,7 @@ async def deposit_paid(
 
 async def balance_paid(
     db: AsyncSession, escrow_id: int, payment_reference: str,
-) -> Optional[EscrowTransaction]:
+) -> EscrowTransaction | None:
     """Mark the balance as paid. Only valid from 'deposit_paid' status."""
     escrow = await _get_escrow(db, escrow_id)
     if not escrow:
@@ -98,7 +101,7 @@ async def balance_paid(
 
 async def release_escrow(
     db: AsyncSession, escrow_id: int, released_by_id: int,
-) -> Optional[EscrowTransaction]:
+) -> EscrowTransaction | None:
     """
     Release escrow funds to the seller. Called when conditions are met
     (title deed transfer verified, both parties confirm).
@@ -115,7 +118,7 @@ async def release_escrow(
 
     escrow.status = EscrowStatus.completed
     escrow.release_condition_met = True
-    escrow.completion_date = datetime.now(timezone.utc)
+    escrow.completion_date = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(escrow)
@@ -132,8 +135,7 @@ async def release_escrow(
     )
 
     # ── Fire event bus: escrow completed ───────────────────────────────────
-    from app.services.event_bus import emit_event, EVENT_ESCROW_COMPLETED
-    asyncio.create_task(
+    asyncio.create_task(  # noqa: RUF006
         _bg_emit_escrow_event(escrow)
     )
 
@@ -142,7 +144,7 @@ async def release_escrow(
 
 async def cancel_escrow(
     db: AsyncSession, escrow_id: int, cancelled_by_id: int, reason: str,
-) -> Optional[EscrowTransaction]:
+) -> EscrowTransaction | None:
     """Cancel an escrow and refund the buyer."""
     escrow = await _get_escrow(db, escrow_id)
     if not escrow:
@@ -168,7 +170,7 @@ async def cancel_escrow(
 
 async def dispute_escrow(
     db: AsyncSession, escrow_id: int, disputed_by_id: int,
-) -> Optional[EscrowTransaction]:
+) -> EscrowTransaction | None:
     """Mark an escrow as disputed — funds are frozen pending resolution."""
     escrow = await _get_escrow(db, escrow_id)
     if not escrow:
@@ -190,7 +192,7 @@ async def dispute_escrow(
 
 async def get_escrow_by_id(
     db: AsyncSession, escrow_id: int,
-) -> Optional[dict]:
+) -> dict | None:
     """Get escrow details with related data."""
     escrow = await _get_escrow(db, escrow_id)
     if not escrow:
@@ -264,7 +266,7 @@ async def get_escrow_stats(db: AsyncSession) -> dict:
 
 # ── Internal Helpers ──────────────────────────────────────────────────────────────
 
-async def _get_escrow(db: AsyncSession, escrow_id: int) -> Optional[EscrowTransaction]:
+async def _get_escrow(db: AsyncSession, escrow_id: int) -> EscrowTransaction | None:
     result = await db.execute(
         select(EscrowTransaction).where(EscrowTransaction.id == escrow_id)
     )
@@ -295,7 +297,7 @@ def _serialize_escrow(e: EscrowTransaction) -> dict:
 
 async def _bg_emit_escrow_event(escrow) -> None:
     """Fire-and-forget: emit escrow.completed event."""
-    from app.services.event_bus import emit_event, EVENT_ESCROW_COMPLETED
+    from app.services.event_bus import EVENT_ESCROW_COMPLETED, emit_event
 
     try:
         data = {

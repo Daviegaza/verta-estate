@@ -1,15 +1,17 @@
-import uuid
+import asyncio
 import logging
+import uuid
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from typing import Optional
-from app.models.payment import Payment, PaymentStatus, PaymentMethod, PaymentPurpose
+
+from app.core.config import settings
+from app.models.payment import Payment, PaymentMethod, PaymentPurpose, PaymentStatus
+from app.services.analytics_service import fire_and_forget_track_user_event
 from app.services.mpesa_service import initiate_stk_push, parse_mpesa_callback
 
 logger = logging.getLogger("vestra")
-
-from app.core.config import settings
-
 
 VERIFICATION_REPORT_PRICE = 500.0   # KES
 AGENT_BADGE_MONTHLY_PRICE = 5000.0  # KES
@@ -21,7 +23,7 @@ async def initiate_mpesa_payment(
     phone_number: str,
     amount: float,
     purpose: PaymentPurpose,
-    reference_id: Optional[int] = None,
+    reference_id: int | None = None,
     description: str = "Vestra Payment",
 ) -> Payment:
     reference = f"VST-{uuid.uuid4().hex[:10].upper()}"
@@ -66,10 +68,7 @@ async def initiate_mpesa_payment(
     await db.refresh(payment)
 
     # ── Fire analytics event: payment_initiated ────────────────────────────
-    import asyncio
-    from app.services.analytics_service import fire_and_forget_track_user_event
-
-    asyncio.create_task(
+    asyncio.create_task(  # noqa: RUF006
         fire_and_forget_track_user_event(
             user_id=user_id,
             event_type="payment_initiated",
@@ -85,7 +84,7 @@ async def initiate_mpesa_payment(
     return payment
 
 
-async def handle_mpesa_callback(db: AsyncSession, callback_data: dict) -> Optional[Payment]:
+async def handle_mpesa_callback(db: AsyncSession, callback_data: dict) -> Payment | None:
     parsed = parse_mpesa_callback(callback_data)
     checkout_id = parsed.get("checkout_request_id")
     if not checkout_id:
@@ -109,11 +108,8 @@ async def handle_mpesa_callback(db: AsyncSession, callback_data: dict) -> Option
     await db.refresh(payment)
 
     # ── Fire analytics event: payment_completed / payment_failed ─────────
-    import asyncio
-    from app.services.analytics_service import fire_and_forget_track_user_event
-
     event_type = "payment_completed" if parsed.get("success") else "payment_failed"
-    asyncio.create_task(
+    asyncio.create_task(  # noqa: RUF006
         fire_and_forget_track_user_event(
             user_id=payment.user_id,
             event_type=event_type,
@@ -157,14 +153,14 @@ async def handle_mpesa_callback(db: AsyncSession, callback_data: dict) -> Option
     return payment
 
 
-async def get_payment_by_id(db: AsyncSession, payment_id: int) -> Optional[Payment]:
+async def get_payment_by_id(db: AsyncSession, payment_id: int) -> Payment | None:
     result = await db.execute(select(Payment).where(Payment.id == payment_id))
     return result.scalar_one_or_none()
 
 
 async def get_payment_by_checkout_id(
     db: AsyncSession, checkout_id: str
-) -> Optional[Payment]:
+) -> Payment | None:
     result = await db.execute(
         select(Payment).where(Payment.mpesa_checkout_request_id == checkout_id)
     )
@@ -190,7 +186,6 @@ async def get_user_payments(db: AsyncSession, user_id: int) -> list:
 
 async def get_monthly_revenue_stats(db: AsyncSession) -> list:
     """Monthly revenue for last 6 months."""
-    from datetime import datetime
     result = await db.execute(
         select(
             func.date_trunc('month', Payment.created_at).label('month'),
@@ -222,7 +217,7 @@ async def get_monthly_revenue_stats(db: AsyncSession) -> list:
 async def process_stripe_payment_intent(
     db: AsyncSession,
     payment_intent: dict,
-) -> Optional[Payment]:
+) -> Payment | None:
     """Create or update a Payment record from a Stripe PaymentIntent webhook event."""
     pi_id = payment_intent.get("id")
     if not pi_id:
@@ -367,7 +362,7 @@ async def refund_payment_stripe(db: AsyncSession, payment: Payment) -> dict:
             '{"event":"stripe_refund_failed","payment_id":%d,"error":"%s"}',
             payment.id, str(e),
         )
-        raise ValueError(f"Stripe refund failed: {str(e)}")
+        raise ValueError(f"Stripe refund failed: {e!s}") from e
 
 
 async def refund_payment_mpesa(db: AsyncSession, payment: Payment) -> dict:
@@ -397,9 +392,8 @@ async def refund_payment_mpesa(db: AsyncSession, payment: Payment) -> dict:
 
 async def get_revenue_summary(db: AsyncSession) -> dict:
     """Aggregated revenue: total, this month, today, projected, growth rate."""
-    from datetime import datetime, timedelta, timezone
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     first_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     last_month_start = (first_of_month - timedelta(days=1)).replace(day=1)
@@ -506,9 +500,8 @@ async def get_revenue_by_method(db: AsyncSession) -> list[dict]:
 
 async def get_daily_revenue(db: AsyncSession, days: int = 30) -> list[dict]:
     """Daily revenue for last N days with zero-fill for missing days."""
-    from datetime import datetime, timedelta, timezone
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     start = now - timedelta(days=days)
 
     result = await db.execute(

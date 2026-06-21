@@ -5,11 +5,14 @@ Builds trust by allowing verified transaction participants to rate each other.
 from __future__ import annotations
 
 import logging
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from typing import TYPE_CHECKING
+
+from sqlalchemy import and_, func, select
 
 from app.models.trust_safety import Review
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -19,9 +22,9 @@ async def create_review(
     reviewer_id: int,
     subject_id: int,
     rating: int,
-    title: Optional[str] = None,
-    body: Optional[str] = None,
-    property_id: Optional[int] = None,
+    title: str | None = None,
+    body: str | None = None,
+    property_id: int | None = None,
     is_verified_transaction: bool = False,
 ) -> Review:
     """Create a review. Validates rating 1-5 and prevents self-reviews."""

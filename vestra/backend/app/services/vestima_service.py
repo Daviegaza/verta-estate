@@ -11,19 +11,18 @@ Uses Redis caching with 1-hour TTL for repeated estimates.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import logging
-import math
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.engine import vestra_ai, KENYA_PRICE_BANDS
+from app.ai.engine import KENYA_PRICE_BANDS, vestra_ai
 from app.core.redis import cache_get, cache_set
 from app.models.property import Property, PropertyStatus
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra.vestima")
 
@@ -145,7 +144,7 @@ async def estimate_property(
         "market_trend": market_trend,
         "market_status": market_status,
         "valuation_summary": summary,
-        "as_of": datetime.now(timezone.utc).isoformat(),
+        "as_of": datetime.now(UTC).isoformat(),
     }
 
 
@@ -230,7 +229,7 @@ async def get_vestima_history(
             "low_estimate": int(hist_value * 0.88),
             "high_estimate": int(hist_value * 1.15),
             "confidence_score": current["confidence_score"],
-            "as_of": datetime.now(timezone.utc).isoformat(),
+            "as_of": datetime.now(UTC).isoformat(),
             "months_ago": months_ago,
         })
 
@@ -315,8 +314,8 @@ async def _fetch_comparables(
     city: str,
     property_type: str,
     listing_type: str,
-    bedrooms: Optional[int],
-    size_sqft: Optional[float],
+    bedrooms: int | None,
+    size_sqft: float | None,
     submitted_price: float,
     estimated_value: int,
 ) -> list[dict]:
@@ -383,7 +382,7 @@ async def _fetch_comparables(
 
 
 def _compute_relevance(
-    prop, bedrooms: Optional[int], size_sqft: Optional[float],
+    prop, bedrooms: int | None, size_sqft: float | None,
     submitted_price: float, estimated_value: int,
 ) -> int:
     """Compute a 0-100 relevance score for a comparable property."""
@@ -422,7 +421,7 @@ def _compute_relevance(
     return max(0, min(100, score))
 
 
-def _estimate_distance(city_a: str, city_b: str) -> Optional[float]:
+def _estimate_distance(city_a: str, city_b: str) -> float | None:
     """Rough distance estimate between two Kenya locations. Returns km or None."""
     if city_a.lower().strip() == city_b.lower().strip():
         return 0.0
@@ -443,7 +442,7 @@ def _estimate_distance(city_a: str, city_b: str) -> Optional[float]:
 
 def _synthetic_comparables(
     city: str, property_type: str, listing_type: str,
-    bedrooms: Optional[int], size_sqft: Optional[float],
+    bedrooms: int | None, size_sqft: float | None,
     submitted_price: float, estimated_value: int,
 ) -> list[dict]:
     """Generate synthetic comparable listings based on city price bands."""
@@ -491,8 +490,8 @@ def _build_summary(
     high: int,
     confidence: int,
     trend: str,
-    bedrooms: Optional[int],
-    size_sqft: Optional[float],
+    bedrooms: int | None,
+    size_sqft: float | None,
 ) -> str:
     parts = [
         f"Vestima AI estimates this property at **KES {estimated:,.0f}** "

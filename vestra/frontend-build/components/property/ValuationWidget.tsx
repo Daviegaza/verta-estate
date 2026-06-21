@@ -38,7 +38,7 @@ export default function ValuationWidget({ propertyId, submittedPrice }: Props) {
     setError('');
     try {
       const data = await api.valuateProperty(propertyId);
-      setValuation(data.valuation);
+      setValuation(data.valuation as unknown as ValuationData);
     } catch {
       setError('Valuation unavailable. Please try again.');
     } finally {
@@ -59,7 +59,7 @@ export default function ValuationWidget({ propertyId, submittedPrice }: Props) {
           <BarChart3 className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <h3 className="font-semibold text-gray-700 mb-1">AI Property Valuation</h3>
           <p className="text-sm text-gray-400 mb-4">
-            Get an instant AI estimate of this property's market value, rental yield, and investment score.
+            Get an instant AI estimate of this property&apos;s market value, rental yield, and investment score.
           </p>
           <Button onClick={runValuation} variant="outline" size="sm">
             <TrendingUp className="w-4 h-4 mr-2" />

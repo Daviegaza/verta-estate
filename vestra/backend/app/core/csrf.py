@@ -13,14 +13,17 @@ Skips validation for:
 """
 from __future__ import annotations
 
-import secrets
 import logging
+import secrets
+from typing import TYPE_CHECKING
 
-from fastapi import Request, HTTPException, status
+from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
 
 from app.core.config import settings
+
+if TYPE_CHECKING:
+    from starlette.responses import Response
 
 logger = logging.getLogger("vestra")
 

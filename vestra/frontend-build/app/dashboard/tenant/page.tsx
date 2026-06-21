@@ -51,6 +51,22 @@ function TenantContent() {
   const [paymentTimeout, setPaymentTimeout] = useState(false);
   const [lastReceipt, setLastReceipt] = useState<any>(null);
 
+  const loadData = async () => {
+    setLoading(true); setError('');
+    try {
+      const [rentalResp, paymentResp] = await Promise.all([
+        api.client.get('/api/rentals/my-rental').catch(() => ({ data: null })),
+        api.client.get('/api/payments/my').catch(() => ({ data: [] })),
+      ]);
+      setRental(rentalResp.data);
+      setPayments(Array.isArray(paymentResp.data) ? paymentResp.data : []);
+    } catch {
+      setError('Unable to load rental information.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => { loadData(); }, []);
 
   // ── Real-time payment confirmation via WebSocket (replaces polling) ──────
@@ -91,21 +107,8 @@ function TenantContent() {
     };
   }, [paymentSent, subscribe]);
 
-  const loadData = async () => {
-    setLoading(true); setError('');
-    try {
-      const [rentalResp, paymentResp] = await Promise.all([
-        api.client.get('/api/rentals/my-rental').catch(() => ({ data: null })),
-        api.client.get('/api/payments/my').catch(() => ({ data: [] })),
-      ]);
-      setRental(rentalResp.data);
-      setPayments(Array.isArray(paymentResp.data) ? paymentResp.data : []);
-    } catch {
-      setError('Unable to load rental information.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // eslint-disable-next-line react-hooks/purity -- Snapshot current time for relative date calculations
+  const now = Date.now();
 
   // ── ONE-CLICK PAY RENT ──
   const handlePayRent = useCallback(async () => {
@@ -148,7 +151,7 @@ function TenantContent() {
 
   const totalDue = rental.monthly_rent_kes + (rental.water_kes || 0) + (rental.electricity_kes || 0) + (rental.service_charge_kes || 0);
   const leaseEnd = rental.lease_end ? new Date(rental.lease_end) : null;
-  const daysLeft = leaseEnd ? Math.ceil((leaseEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+  const daysLeft = leaseEnd ? Math.ceil((leaseEnd.getTime() - now) / (1000 * 60 * 60 * 24)) : 0;
 
   const stats: StatItem[] = [
     {
@@ -264,7 +267,7 @@ function TenantContent() {
         <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-6 text-center">
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-3" />
           <h3 className="text-lg font-bold text-red-800 mb-2">Payment Timed Out</h3>
-          <p className="text-red-700 mb-4">We didn't receive a payment confirmation after 60 seconds. The STK Push may have expired.</p>
+          <p className="text-red-700 mb-4">We didn&apos;t receive a payment confirmation after 60 seconds. The STK Push may have expired.</p>
           <Button
             onClick={() => setPaymentTimeout(false)}
             className="bg-red-600 hover:bg-red-500 text-white"
@@ -483,7 +486,7 @@ function TenantContent() {
 function NoRentalView() {
   return (
     <div className="space-y-8 animate-fade-in">
-      <RoleBanner subtitle="Welcome to your free tenant portal. Let's find your next home." />
+      <RoleBanner subtitle="Welcome to your free tenant portal. Let&apos;s find your next home." />
 
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">

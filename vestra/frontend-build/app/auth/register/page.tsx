@@ -144,7 +144,7 @@ export default function RegisterPage() {
             <div className="flex items-start gap-2">
               <input type="checkbox" required className="mt-1 rounded border-gray-300 text-emerald-600" />
               <p className="text-xs text-gray-500">
-                I agree to Vestra's{' '}
+                I agree to Vestra&apos;s{' '}
                 <Link href="#" className="text-emerald-600 hover:underline">Terms of Service</Link>
                 {' '}and{' '}
                 <Link href="#" className="text-emerald-600 hover:underline">Privacy Policy</Link>
@@ -169,7 +169,7 @@ export default function RegisterPage() {
       <div className="hidden lg:flex flex-1 bg-gradient-to-br from-gray-900 to-emerald-900 text-white flex-col justify-center px-16">
         <div className="max-w-md">
           <ShieldCheck className="w-16 h-16 text-emerald-400 mb-8" />
-          <h2 className="text-4xl font-bold mb-4">Join Africa's Property Revolution</h2>
+          <h2 className="text-4xl font-bold mb-4">Join Africa&apos;s Property Revolution</h2>
           <p className="text-gray-300 text-lg leading-relaxed mb-8">
             Get AI-powered trust scores, verify any property instantly, and transact safely.
           </p>

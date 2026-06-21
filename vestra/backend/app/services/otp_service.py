@@ -7,9 +7,13 @@ from __future__ import annotations
 import logging
 import random
 import string
-from datetime import datetime, timezone, timedelta
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.redis import cache_get, cache_set, cache_delete
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+from app.core.redis import cache_delete, cache_get, cache_set
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -51,7 +55,7 @@ async def send_otp(phone: str) -> dict:
     await cache_set(key, {
         "code": otp,
         "attempts": 0,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }, ttl=OTP_TTL)
 
     # Set cooldown
@@ -114,14 +118,15 @@ async def verify_otp(phone: str, code: str) -> dict:
     return {"success": True, "verified": True, "phone": phone}
 
 
-async def get_or_create_user_by_phone(db: AsyncSession, phone: str, full_name: str = None) -> tuple:
+async def get_or_create_user_by_phone(db: AsyncSession, phone: str, full_name: str | None = None) -> tuple:
     """
     Find existing user by phone or create a new one.
     Returns (user, is_new).
     All new users start as 'buyer' role (browse-only, no dashboard).
     """
-    from app.models.user import User, UserRole
     from sqlalchemy import select
+
+    from app.models.user import User, UserRole
 
     phone = _normalize_phone(phone)
 

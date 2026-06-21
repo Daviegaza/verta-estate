@@ -18,8 +18,6 @@ function FraudContent() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('pending');
 
-  useEffect(() => { loadReports(); }, [filter]);
-
   const loadReports = async () => {
     setLoading(true); setError('');
     try {
@@ -29,6 +27,8 @@ function FraudContent() {
       setError('Failed to load fraud reports');
     } finally { setLoading(false); }
   };
+
+  useEffect(() => { loadReports(); }, [filter]);
 
   const handleReview = async (id: number, status: string) => {
     try {

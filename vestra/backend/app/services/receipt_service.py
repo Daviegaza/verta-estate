@@ -5,22 +5,28 @@ from __future__ import annotations
 
 import io
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
 try:
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import A5
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.lib.colors import HexColor, black, white
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+        HRFlowable,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
     )
     REPORTLAB_AVAILABLE = True
 except ImportError:
@@ -31,12 +37,12 @@ async def generate_rent_receipt_pdf(
     db: AsyncSession,
     payment_id: int,
     unit_id: int,
-) -> Optional[bytes]:
+) -> bytes | None:
     """Generate a branded A5 rent receipt PDF. Returns bytes or None if unavailable."""
     if not REPORTLAB_AVAILABLE:
         return None
 
-    from app.models.rental import RentPayment, RentalUnit, Tenant
+    from app.models.rental import RentalUnit, RentPayment, Tenant
 
     # Load payment
     pay_result = await db.execute(

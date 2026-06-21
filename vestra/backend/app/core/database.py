@@ -1,7 +1,7 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
-from app.core.config import settings
 
+from app.core.config import settings
 
 engine = create_async_engine(
     settings.DATABASE_URL,
@@ -47,7 +47,17 @@ async def create_tables():
     """
     if settings.ENVIRONMENT == "development":
         async with engine.begin() as conn:
-            from app.models import user, property, document, payment, audit_log, subscription, referral, title_chain, rental  # noqa: F401
+            from app.models import (  # noqa: F401
+                audit_log,
+                document,
+                payment,
+                property,
+                referral,
+                rental,
+                subscription,
+                title_chain,
+                user,
+            )
             await conn.run_sync(Base.metadata.create_all)
     else:
         logger = __import__("logging").getLogger("vestra")

@@ -1,11 +1,15 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_, case
-from typing import Optional, List
-from datetime import datetime, timezone, timedelta
-from app.models.property import Property, PropertyStatus
-from app.schemas.property import PropertyCreate, PropertyUpdate, PropertySearch
-from app.core.redis import cache_get, cache_set, cache_delete
+import asyncio
+import contextlib
 import logging
+from datetime import UTC, datetime
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.redis import cache_delete, cache_get, cache_set
+from app.models.property import Property, PropertyStatus
+from app.schemas.property import PropertyCreate, PropertySearch, PropertyUpdate
+from app.services.analytics_service import fire_and_forget_track_price_change
 
 logger = logging.getLogger("vestra")
 
@@ -21,7 +25,7 @@ FREE_LISTINGS_PER_MONTH_UNSUBSCRIBED = 3
 
 async def count_user_listings_this_month(db: AsyncSession, user_id: int) -> int:
     """Count how many listings a user has created this calendar month."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
         select(func.count(Property.id)).where(
@@ -40,8 +44,10 @@ async def create_property(db: AsyncSession, owner_id: int, data: PropertyCreate)
     # Get user role and enforce subscription
     from app.models.user import User
     from app.services.subscription_service import (
-        get_listing_limit, get_user_subscription, enforce_subscription,
         ROLE_REQUIRES_SUBSCRIPTION,
+        enforce_subscription,
+        get_listing_limit,
+        get_user_subscription,
     )
 
     user_result = await db.execute(select(User).where(User.id == owner_id))
@@ -146,11 +152,8 @@ async def update_property(
     await db.refresh(prop)
 
     # ── Fire-and-forget: track price change if price was updated ─────────
-    from app.services.analytics_service import fire_and_forget_track_price_change
-    import asyncio
-
     if data.model_dump(exclude_unset=True).get("price") is not None and old_price != prop.price:
-        asyncio.create_task(
+        asyncio.create_task(  # noqa: RUF006
             fire_and_forget_track_price_change(
                 property_id=prop.id,
                 old_price=float(old_price) if old_price else 0,
@@ -225,7 +228,7 @@ async def search_properties(
     if search.bathrooms is not None:
         query = query.where(Property.bathrooms >= search.bathrooms)
     if search.verified_only:
-        query = query.where(Property.is_verified == True)
+        query = query.where(Property.is_verified)
 
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
@@ -263,7 +266,8 @@ async def search_properties(
 
 def _hash_search(search: PropertySearch) -> str:
     """Hash search params for cache key (no session objects)."""
-    import hashlib, json
+    import hashlib
+    import json
     raw = json.dumps({
         "q": search.query or "", "city": search.city or "",
         "county": search.county or "", "pt": str(search.property_type or ""),
@@ -295,13 +299,11 @@ async def get_owner_properties(
     return {"items": result.scalars().all(), "total": total}
 
 
-async def count_properties(db: AsyncSession, status: str = None) -> int:
+async def count_properties(db: AsyncSession, status: str | None = None) -> int:
     query = select(func.count(Property.id))
     if status:
-        try:
+        with contextlib.suppress(ValueError):
             query = query.where(Property.status == PropertyStatus(status))
-        except ValueError:
-            pass
     result = await db.execute(query)
     return result.scalar_one()
 
@@ -315,7 +317,7 @@ async def count_active_listings(db: AsyncSession) -> int:
 
 async def count_verified_properties(db: AsyncSession) -> int:
     result = await db.execute(
-        select(func.count(Property.id)).where(Property.is_verified == True)
+        select(func.count(Property.id)).where(Property.is_verified)
     )
     return result.scalar_one()
 
@@ -334,15 +336,13 @@ async def increment_property_views(db: AsyncSession, property_id: int) -> None:
 # ─── Admin Functions ───────────────────────────────────────────────────────────
 
 async def get_all_properties_admin(
-    db: AsyncSession, skip: int = 0, limit: int = 50, status: str = None,
+    db: AsyncSession, skip: int = 0, limit: int = 50, status: str | None = None,
 ):
     from sqlalchemy.orm import joinedload
     query = select(Property).options(joinedload(Property.owner)).order_by(Property.created_at.desc())
     if status:
-        try:
+        with contextlib.suppress(ValueError):
             query = query.where(Property.status == PropertyStatus(status))
-        except ValueError:
-            pass
     result = await db.execute(query.offset(skip).limit(limit))
     return result.unique().scalars().all()
 

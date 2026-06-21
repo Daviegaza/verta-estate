@@ -6,12 +6,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import func, select
 
 from app.models.trust_safety import Dispute, DisputeStatus
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -32,10 +35,10 @@ async def create_dispute(
     reporter_id: int,
     category: str,
     description: str,
-    property_id: Optional[int] = None,
-    subject_type: Optional[str] = None,
-    subject_id: Optional[int] = None,
-    evidence_urls: Optional[list] = None,
+    property_id: int | None = None,
+    subject_type: str | None = None,
+    subject_id: int | None = None,
+    evidence_urls: list | None = None,
 ) -> Dispute:
     """File a new dispute."""
     if category not in DISPUTE_CATEGORIES:
@@ -67,7 +70,7 @@ async def create_dispute(
     )
 
     # ── Fire event bus: dispute filed ──────────────────────────────────────
-    asyncio.create_task(
+    _task_dispute = asyncio.create_task(  # noqa: RUF006
         _bg_emit_dispute_event(dispute)
     )
 
@@ -76,7 +79,7 @@ async def create_dispute(
 
 async def get_dispute_by_id(
     db: AsyncSession, dispute_id: int,
-) -> Optional[dict]:
+) -> dict | None:
     """Get dispute details."""
     result = await db.execute(
         select(Dispute).where(Dispute.id == dispute_id)
@@ -99,7 +102,7 @@ async def get_user_disputes(
 
 
 async def get_all_disputes(
-    db: AsyncSession, status: Optional[str] = None, limit: int = 50,
+    db: AsyncSession, status: str | None = None, limit: int = 50,
 ) -> list[dict]:
     """Get all disputes (admin view), optionally filtered by status."""
     query = select(Dispute).order_by(Dispute.created_at.desc())
@@ -118,7 +121,7 @@ async def get_all_disputes(
 
 async def assign_dispute(
     db: AsyncSession, dispute_id: int, admin_id: int,
-) -> Optional[dict]:
+) -> dict | None:
     """Assign a dispute to an admin for investigation."""
     result = await db.execute(
         select(Dispute).where(Dispute.id == dispute_id)
@@ -149,7 +152,7 @@ async def resolve_dispute(
     resolver_id: int,
     resolution: str,
     status: str = "resolved",
-) -> Optional[dict]:
+) -> dict | None:
     """Resolve a dispute with a resolution note."""
     result = await db.execute(
         select(Dispute).where(Dispute.id == dispute_id)
@@ -161,7 +164,7 @@ async def resolve_dispute(
     dispute.status = DisputeStatus(status)
     dispute.resolution = resolution
     dispute.resolved_by_id = resolver_id
-    dispute.resolved_at = datetime.now(timezone.utc)
+    dispute.resolved_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(dispute)
@@ -239,7 +242,7 @@ def _serialize_dispute(d: Dispute) -> dict:
 
 async def _bg_emit_dispute_event(dispute) -> None:
     """Fire-and-forget: emit dispute.filed event."""
-    from app.services.event_bus import emit_event, EVENT_DISPUTE_FILED
+    from app.services.event_bus import EVENT_DISPUTE_FILED, emit_event
 
     try:
         data = {

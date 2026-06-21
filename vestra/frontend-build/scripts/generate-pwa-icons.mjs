@@ -4,14 +4,18 @@
  * Generates minimal valid PNG icons for Vestra PWA at all sizes
  * referenced in manifest.json. Uses pure Node.js (no dependencies).
  *
- * Run: node scripts/generate-pwa-icons.js
+ * Run: node scripts/generate-pwa-icons.mjs
  *
  * These are placeholder solid-color icons. For production, replace
  * with properly designed icons from a design tool.
  */
-const fs = require('fs');
-const path = require('path');
-const zlib = require('zlib');
+import fs from 'fs';
+import path from 'path';
+import zlib from 'zlib';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // -- Config -------------------------------------------------------------------
 const EMERALD_R = 0x05;

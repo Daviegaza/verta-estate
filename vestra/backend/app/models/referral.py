@@ -1,12 +1,14 @@
 """Referral model — viral growth engine."""
 import enum
-from sqlalchemy import Column, Integer, String, Float, Numeric, DateTime, ForeignKey
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from app.core.database import Base
 
 
-class ReferralStatus(str, enum.Enum):
+class ReferralStatus(enum.StrEnum):
     signed_up = "signed_up"
     verified = "verified"
     converted = "converted"

@@ -1,17 +1,18 @@
-from pydantic import BaseModel, EmailStr, field_validator
-from typing import Optional
 from datetime import datetime
+
+from pydantic import BaseModel, EmailStr, field_validator
+
 from app.models.user import UserRole
 
 
 class UserCreate(BaseModel):
     email: EmailStr
-    phone: Optional[str] = None
+    phone: str | None = None
     full_name: str
     password: str
     role: UserRole = UserRole.buyer
-    turnstile_token: Optional[str] = None  # Cloudflare Turnstile CAPTCHA token
-    referral_code: Optional[str] = None  # Referral code from another user
+    turnstile_token: str | None = None  # Cloudflare Turnstile CAPTCHA token
+    referral_code: str | None = None  # Referral code from another user
 
     @field_validator("password")
     @classmethod
@@ -36,14 +37,14 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
-    phone: Optional[str]
+    phone: str | None
     full_name: str
     role: UserRole
     is_active: bool
     is_verified: bool
     is_kyc_verified: bool = False
-    avatar_url: Optional[str]
-    location: Optional[str]
+    avatar_url: str | None
+    location: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -55,11 +56,11 @@ class UserResponse(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    full_name: Optional[str] = None
-    phone: Optional[str] = None
-    bio: Optional[str] = None
-    location: Optional[str] = None
-    avatar_url: Optional[str] = None
+    full_name: str | None = None
+    phone: str | None = None
+    bio: str | None = None
+    location: str | None = None
+    avatar_url: str | None = None
 
 
 class Token(BaseModel):
@@ -70,18 +71,18 @@ class Token(BaseModel):
 
 
 class AgentProfileCreate(BaseModel):
-    agency_name: Optional[str] = None
-    license_number: Optional[str] = None
+    agency_name: str | None = None
+    license_number: str | None = None
     years_experience: int = 0
     specialization: list[str] = []
 
 
 class AgentProfileResponse(BaseModel):
     id: int
-    agency_name: Optional[str]
-    license_number: Optional[str]
+    agency_name: str | None
+    license_number: str | None
     years_experience: int
-    badge_level: Optional[str]
+    badge_level: str | None
     total_listings: int
     successful_deals: int
     rating: float

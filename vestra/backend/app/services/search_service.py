@@ -4,13 +4,15 @@ Provides fast, relevance-ranked property search with typo tolerance.
 """
 from __future__ import annotations
 
-from typing import Optional
-from sqlalchemy import text, select, func, or_
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import TYPE_CHECKING
 
-from app.models.property import Property, PropertyStatus, PropertyType, ListingType
+from sqlalchemy import text
+
 from app.core.redis import cache_get, cache_set
+from app.models.property import ListingType, Property, PropertyType
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 FTS_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_properties_fts
@@ -39,12 +41,12 @@ async def ensure_fts_index(db: AsyncSession):
 async def full_text_search(
     db: AsyncSession,
     query: str,
-    city: Optional[str] = None,
-    property_type: Optional[PropertyType] = None,
-    listing_type: Optional[ListingType] = None,
-    min_price: Optional[float] = None,
-    max_price: Optional[float] = None,
-    bedrooms: Optional[int] = None,
+    city: str | None = None,
+    property_type: PropertyType | None = None,
+    listing_type: ListingType | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    bedrooms: int | None = None,
     verified_only: bool = False,
     page: int = 1,
     size: int = 20,
@@ -192,7 +194,8 @@ async def cached_full_text_search(
     **filters,
 ) -> dict:
     """Full-text search with Redis caching for repeated queries."""
-    import hashlib, json
+    import hashlib
+    import json
 
     cache_key_raw = json.dumps({
         "q": query.lower().strip(),
@@ -216,7 +219,7 @@ def _sanitize_tsquery(query: str) -> str:
     return re.sub(r"[&|!:*()<>\"]", " ", query).strip()
 
 
-def _to_tsquery(query: str) -> Optional[str]:
+def _to_tsquery(query: str) -> str | None:
     """Convert search string to tsquery. Returns None if empty."""
     q = query.strip()
     if not q:

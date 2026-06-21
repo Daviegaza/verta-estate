@@ -4,12 +4,13 @@ Flow: Enter phone → get OTP via WhatsApp → verify → done.
 No email, no password required. Browse first, upgrade role later.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user
 from app.schemas.user import UserResponse
-from app.services.otp_service import send_otp, verify_otp, get_or_create_user_by_phone
+from app.services.otp_service import get_or_create_user_by_phone, send_otp, verify_otp
 
 router = APIRouter(prefix="/auth", tags=["Phone Auth"])
 
@@ -84,7 +85,7 @@ async def upgrade_role(
     try:
         new_role = UserRole(role)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid role: {role}")
+        raise HTTPException(status_code=400, detail=f"Invalid role: {role}") from None
 
     current_user.role = new_role
     await db.commit()
@@ -92,8 +93,9 @@ async def upgrade_role(
 
     # If upgrading to agent, create agent profile
     if role == "agent":
-        from app.models.property import AgentProfile
         from sqlalchemy import select
+
+        from app.models.property import AgentProfile
         result = await db.execute(
             select(AgentProfile).where(AgentProfile.user_id == current_user.id)
         )

@@ -2,25 +2,37 @@
 Rental Management API — units, tenants, leases, rent collection, maintenance.
 Subscription-gated: Free (2 units), Basic (10), Pro (30), Premium (100).
 """
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.services.rental_service import (
-    create_rental_unit, get_landlord_units, get_unit_detail,
-    add_tenant, get_tenant, list_landlord_tenants,
-    generate_monthly_rent_bills, request_rent_payment, record_rent_payment,
-    create_maintenance_request, get_unit_maintenance, update_maintenance_status,
-    get_rental_dashboard,
-)
-from app.services.subscription_service import get_listing_limit, enforce_subscription
 from app.models.rental import (
-    Lease, RentPayment, Tenant, PaymentArrangement, ArrangementStatus,
-    InstallmentPayment, RentCollectionConfig,
+    ArrangementStatus,
+    Lease,
+    PaymentArrangement,
+    RentPayment,
+    Tenant,
 )
+from app.services.rental_service import (
+    add_tenant,
+    create_maintenance_request,
+    create_rental_unit,
+    generate_monthly_rent_bills,
+    get_landlord_units,
+    get_rental_dashboard,
+    get_tenant,
+    get_unit_detail,
+    get_unit_maintenance,
+    list_landlord_tenants,
+    record_rent_payment,
+    request_rent_payment,
+    update_maintenance_status,
+)
+from app.services.subscription_service import enforce_subscription, get_listing_limit
 
 router = APIRouter(prefix="/rentals", tags=["Rental Management"])
 
@@ -112,9 +124,9 @@ async def get_unit(unit_id: int, current_user=Depends(get_current_user), db: Asy
             for t in (unit.tenants or [])
         ],
         "leases": [
-            {"id": l.id, "start": l.start_date.isoformat(), "end": l.end_date.isoformat(),
-             "rent": l.monthly_rent_kes, "status": l.status.value}
-            for l in (unit.leases or [])
+            {"id": ls.id, "start": ls.start_date.isoformat(), "end": ls.end_date.isoformat(),
+             "rent": ls.monthly_rent_kes, "status": ls.status.value}
+            for ls in (unit.leases or [])
         ],
     }
 
@@ -126,14 +138,14 @@ async def create_tenant(
     unit_id: int = Query(...),
     full_name: str = Query(...),
     phone: str = Query(...),
-    email: Optional[str] = Query(None),
-    national_id: Optional[str] = Query(None),
-    move_in_date: Optional[str] = Query(None),
+    email: str | None = Query(None),
+    national_id: str | None = Query(None),
+    move_in_date: str | None = Query(None),
     rent_due_day: int = Query(1),
-    lease_start: Optional[str] = Query(None),
-    lease_end: Optional[str] = Query(None),
-    monthly_rent: Optional[float] = Query(None),
-    deposit: Optional[float] = Query(0),
+    lease_start: str | None = Query(None),
+    lease_end: str | None = Query(None),
+    monthly_rent: float | None = Query(None),
+    deposit: float | None = Query(0),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -143,12 +155,12 @@ async def create_tenant(
     tenant_data = {
         "full_name": full_name, "phone": phone, "email": email,
         "national_id": national_id,
-        "move_in_date": datetime.fromisoformat(move_in_date) if move_in_date else datetime.now(timezone.utc),
+        "move_in_date": datetime.fromisoformat(move_in_date) if move_in_date else datetime.now(UTC),
         "rent_due_day": rent_due_day,
     }
     lease_data = {
-        "start_date": datetime.fromisoformat(lease_start) if lease_start else datetime.now(timezone.utc),
-        "end_date": datetime.fromisoformat(lease_end) if lease_end else datetime.now(timezone.utc).replace(year=datetime.now(timezone.utc).year + 1),
+        "start_date": datetime.fromisoformat(lease_start) if lease_start else datetime.now(UTC),
+        "end_date": datetime.fromisoformat(lease_end) if lease_end else datetime.now(UTC).replace(year=datetime.now(UTC).year + 1),
         "monthly_rent_kes": monthly_rent,
         "deposit_kes": deposit,
     }
@@ -179,19 +191,19 @@ async def list_my_tenants(
 
 @router.post("/rent/generate-bills")
 async def generate_bills(
-    month: Optional[str] = Query(None),
+    month: str | None = Query(None),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Generate monthly rent bills for all tenants."""
     bills = await generate_monthly_rent_bills(db, current_user.id, month)
-    return {"generated": len(bills), "month": month or datetime.now(timezone.utc).strftime("%Y-%m")}
+    return {"generated": len(bills), "month": month or datetime.now(UTC).strftime("%Y-%m")}
 
 
 @router.post("/rent/request-payment/{tenant_id}")
 async def request_rent(
     tenant_id: int,
-    month: Optional[str] = Query(None),
+    month: str | None = Query(None),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -227,7 +239,7 @@ async def report_maintenance(
 ):
     """Report a maintenance issue."""
     # Find tenant for this user's phone
-    units = await get_landlord_units(db, current_user.id)
+    await get_landlord_units(db, current_user.id)
     # For simplicity, use current user's phone; in production, match tenant by phone
     req = await create_maintenance_request(db, unit_id, current_user.id, {
         "title": title, "description": description,
@@ -239,7 +251,7 @@ async def report_maintenance(
 @router.get("/maintenance/{unit_id}")
 async def list_maintenance(
     unit_id: int,
-    status: Optional[str] = Query(None),
+    status: str | None = Query(None),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -258,7 +270,7 @@ async def update_maintenance(
     request_id: int,
     status: str = Query(...),
     notes: str = Query(""),
-    actual_cost: Optional[float] = Query(None),
+    actual_cost: float | None = Query(None),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -275,9 +287,9 @@ async def get_my_rental(
     db: AsyncSession = Depends(get_db),
 ):
     """Get current user's rental (for tenant role)."""
-    from sqlalchemy import select
     from sqlalchemy.orm import joinedload
-    from app.models.rental import Tenant, RentalUnit, Lease
+
+    from app.models.rental import RentalUnit
 
     # Find tenant record matching user's phone or email
     result = await db.execute(
@@ -285,7 +297,7 @@ async def get_my_rental(
         .options(joinedload(Tenant.unit).joinedload(RentalUnit.landlord))
         .options(joinedload(Tenant.lease))
         .where(
-            Tenant.is_active == True,
+            Tenant.is_active,
             Tenant.phone == current_user.phone,
         )
         .limit(1)
@@ -309,7 +321,7 @@ async def get_my_rental(
         "deposit_kes": float(unit.deposit_kes) if unit and unit.deposit_kes else 0,
         "lease_start": lease.start_date.isoformat() if lease and lease.start_date else None,
         "lease_end": lease.end_date.isoformat() if lease and lease.end_date else None,
-        "days_remaining": (lease.end_date - datetime.now(timezone.utc)).days if lease and lease.end_date else 0,
+        "days_remaining": (lease.end_date - datetime.now(UTC)).days if lease and lease.end_date else 0,
         "landlord_name": landlord.full_name if landlord else None,
         "landlord_phone": landlord.phone if landlord else None,
         "landlord_email": landlord.email if landlord else None,
@@ -326,13 +338,12 @@ async def tenant_pay_rent(
     db: AsyncSession = Depends(get_db),
 ):
     """Tenant initiates rent payment via M-Pesa."""
-    from sqlalchemy import select
-    from app.models.rental import Tenant
+
 
     # Find tenant by phone
     result = await db.execute(
         select(Tenant).where(
-            Tenant.is_active == True,
+            Tenant.is_active,
             Tenant.phone == current_user.phone,
         ).limit(1)
     )
@@ -340,8 +351,8 @@ async def tenant_pay_rent(
     if not tenant:
         raise HTTPException(status_code=404, detail="No active rental found for your account")
 
-    amount = data.get("amount", 0)
-    phone_number = data.get("phone_number") or current_user.phone
+    data.get("amount", 0)
+    data.get("phone_number") or current_user.phone
 
     # Trigger M-Pesa STK Push
     result = await request_rent_payment(db, tenant.id, month=None)
@@ -356,9 +367,9 @@ async def get_my_maintenance(
     db: AsyncSession = Depends(get_db),
 ):
     """Get maintenance requests — tenant sees own, landlord sees all for their units."""
-    from sqlalchemy import select
     from sqlalchemy.orm import joinedload
-    from app.models.rental import Tenant, MaintenanceRequest, RentalUnit
+
+    from app.models.rental import MaintenanceRequest, RentalUnit
 
     if current_user.role.value == 'landlord':
         # Landlord: get all maintenance for their units
@@ -383,7 +394,7 @@ async def get_my_maintenance(
         # Tenant: find their tenant record by phone
         result = await db.execute(
             select(Tenant).where(
-                Tenant.is_active == True,
+                Tenant.is_active,
                 Tenant.phone == current_user.phone,
             ).limit(1)
         )
@@ -431,13 +442,12 @@ async def create_tenant_maintenance(
     db: AsyncSession = Depends(get_db),
 ):
     """Tenant-friendly: submit maintenance request without needing unit_id as query param."""
-    from sqlalchemy import select
-    from app.models.rental import Tenant
+
 
     # Find tenant by phone
     result = await db.execute(
         select(Tenant).where(
-            Tenant.is_active == True,
+            Tenant.is_active,
             Tenant.phone == current_user.phone,
         ).limit(1)
     )
@@ -477,7 +487,7 @@ async def trigger_rent_reminders(
     Sends in-app notifications and WhatsApp reminders.
     Typically called by a daily cron job but can be triggered manually.
     """
-    from app.services.smart_automation import send_rent_due_reminders, send_lease_expiry_alerts
+    from app.services.smart_automation import send_lease_expiry_alerts, send_rent_due_reminders
 
     rent_result = await send_rent_due_reminders(db)
     lease_result = await send_lease_expiry_alerts(db)
@@ -495,9 +505,9 @@ async def landlord_payment_feed(
     db: AsyncSession = Depends(get_db),
 ):
     """Real-time payment feed for landlord — all rent payments across all units."""
-    from sqlalchemy import select
     from sqlalchemy.orm import joinedload
-    from app.models.rental import RentPayment, RentalUnit, Tenant
+
+    from app.models.rental import RentalUnit, RentPayment
 
     # Get landlord's units
     result = await db.execute(
@@ -554,8 +564,8 @@ async def schedule_auto_collection(
     db: AsyncSession = Depends(get_db),
 ):
     """Enable auto-collection for a lease via monthly M-Pesa STK Push."""
-    from sqlalchemy import select
-    from app.models.rental import Lease, LeaseStatus
+
+    from app.models.rental import Lease
 
     result = await db.execute(select(Lease).where(Lease.id == lease_id))
     lease = result.scalar_one_or_none()
@@ -578,7 +588,7 @@ async def cancel_auto_collection(
     db: AsyncSession = Depends(get_db),
 ):
     """Disable auto-collection for a lease."""
-    from sqlalchemy import select
+
     from app.models.rental import Lease
 
     result = await db.execute(select(Lease).where(Lease.id == lease_id))
@@ -604,7 +614,7 @@ async def unit_payment_history(
     db: AsyncSession = Depends(get_db),
 ):
     """Get payment history for a rental unit."""
-    from sqlalchemy import select
+
     from app.models.rental import RentPayment
 
     unit = await get_unit_detail(db, unit_id)
@@ -641,6 +651,7 @@ async def download_rent_receipt(
 ):
     """Download a rent payment receipt as PDF."""
     from fastapi.responses import Response
+
     from app.services.receipt_service import generate_rent_receipt_pdf
 
     unit = await get_unit_detail(db, unit_id)
@@ -678,11 +689,11 @@ async def request_arrangement(
     tenant_id = data.get("tenant_id")
     if not tenant_id:
         # Find tenant by user's phone
-        from sqlalchemy import select
+
         from app.models.rental import Tenant
         result = await db.execute(
             select(Tenant).where(
-                Tenant.is_active == True,
+                Tenant.is_active,
                 Tenant.phone == current_user.phone,
             ).limit(1)
         )
@@ -716,9 +727,8 @@ async def approve_arrangement(
     db: AsyncSession = Depends(get_db),
 ):
     """Landlord approves a payment arrangement."""
-    from app.services.rental_service import approve_payment_arrangement, get_active_arrangement
-    from sqlalchemy import select
-    from app.models.rental import PaymentArrangement, ArrangementStatus
+
+    from app.services.rental_service import approve_payment_arrangement
 
     result = await db.execute(
         select(PaymentArrangement).where(PaymentArrangement.id == arrangement_id)
@@ -749,7 +759,6 @@ async def decline_arrangement(
 ):
     """Landlord declines a payment arrangement."""
     from app.services.rental_service import decline_payment_arrangement
-    from app.models.rental import PaymentArrangement
 
     result = await db.execute(
         select(PaymentArrangement).where(PaymentArrangement.id == arrangement_id)
@@ -768,13 +777,12 @@ async def decline_arrangement(
 
 @router.get("/arrangements")
 async def list_arrangements(
-    status: Optional[str] = Query(None),
+    status: str | None = Query(None),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get payment arrangements. Tenant sees own, landlord sees all for their units."""
-    from app.services.rental_service import get_tenant_arrangements, get_landlord_units
-    from app.models.rental import PaymentArrangement, ArrangementStatus
+    from app.services.rental_service import get_landlord_units, get_tenant_arrangements
 
     if current_user.role.value == "landlord":
         units = await get_landlord_units(db, current_user.id)
@@ -789,11 +797,11 @@ async def list_arrangements(
         items = result.scalars().all()
     else:
         # Tenant — find by phone
-        from sqlalchemy import select as sa_select
+
         from app.models.rental import Tenant
         result = await db.execute(
-            sa_select(Tenant).where(
-                Tenant.is_active == True,
+            select(Tenant).where(
+                Tenant.is_active,
                 Tenant.phone == current_user.phone,
             ).limit(1)
         )
@@ -836,11 +844,11 @@ async def partial_payment(
 
     tenant_id = data.get("tenant_id")
     if not tenant_id:
-        from sqlalchemy import select
+
         from app.models.rental import Tenant
         result = await db.execute(
             select(Tenant).where(
-                Tenant.is_active == True,
+                Tenant.is_active,
                 Tenant.phone == current_user.phone,
             ).limit(1)
         )
@@ -865,14 +873,15 @@ async def get_balance(
     db: AsyncSession = Depends(get_db),
 ):
     """Get outstanding rent balance for a tenant."""
-    from app.services.rental_service import get_tenant, get_active_arrangement
-    from datetime import datetime, timezone
+    from datetime import datetime
+
+    from app.services.rental_service import get_active_arrangement
 
     tenant = await get_tenant(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    month = datetime.now(UTC).strftime("%Y-%m")
     result = await db.execute(
         select(RentPayment).where(
             RentPayment.tenant_id == tenant_id,
@@ -951,12 +960,12 @@ async def get_collection_config(
 @router.put("/collection-config/{lease_id}")
 async def update_collection_config(
     lease_id: int,
-    grace_period_days: Optional[int] = Query(None),
-    late_fee_type: Optional[str] = Query(None),
-    late_fee_amount_kes: Optional[float] = Query(None),
-    late_fee_max_kes: Optional[float] = Query(None),
-    allow_partial_payments: Optional[bool] = Query(None),
-    allow_payment_arrangements: Optional[bool] = Query(None),
+    grace_period_days: int | None = Query(None),
+    late_fee_type: str | None = Query(None),
+    late_fee_amount_kes: float | None = Query(None),
+    late_fee_max_kes: float | None = Query(None),
+    allow_partial_payments: bool | None = Query(None),
+    allow_payment_arrangements: bool | None = Query(None),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

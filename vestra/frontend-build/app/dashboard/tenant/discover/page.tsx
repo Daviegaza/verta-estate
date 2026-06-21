@@ -38,8 +38,6 @@ function DiscoverContent() {
   const [maxPrice, setMaxPrice] = useState('');
   const [bedrooms, setBedrooms] = useState('');
 
-  useEffect(() => { loadProperties(); }, [city, propType]);
-
   const loadProperties = async () => {
     setLoading(true);
     try {
@@ -56,6 +54,8 @@ function DiscoverContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => { loadProperties(); }, [city, propType]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

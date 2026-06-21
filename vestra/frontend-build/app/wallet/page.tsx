@@ -73,10 +73,6 @@ function WalletContent() {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState<PaymentStatus | 'all'>('all');
 
-  useEffect(() => {
-    loadPayments();
-  }, []);
-
   const loadPayments = async () => {
     try {
       setError('');
@@ -88,6 +84,10 @@ function WalletContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadPayments();
+  }, []);
 
   const handleExportCSV = () => {
     const headers = ['Date', 'Description', 'Amount', 'Status', 'Method'];

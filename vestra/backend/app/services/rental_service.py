@@ -14,18 +14,29 @@ Subscription-gated: Free (2 units), Basic (10), Pro (30), Premium (100)
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional, List
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
 from app.models.rental import (
-    RentalUnit, Tenant, Lease, RentPayment, MaintenanceRequest,
-    LeaseStatus, RentPaymentStatus, MaintenanceStatus, MaintenancePriority,
+    ArrangementStatus,
+    InstallmentPayment,
+    Lease,
+    MaintenancePriority,
+    MaintenanceRequest,
+    MaintenanceStatus,
+    PaymentArrangement,
+    RentalUnit,
+    RentCollectionConfig,
+    RentPayment,
+    RentPaymentStatus,
+    Tenant,
 )
-from app.core.redis import cache_get, cache_set, cache_delete
-from app.services.subscription_service import get_listing_limit
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -49,7 +60,7 @@ async def create_rental_unit(
 
 async def get_landlord_units(
     db: AsyncSession, landlord_id: int,
-) -> List[RentalUnit]:
+) -> list[RentalUnit]:
     """Get all rental units for a landlord."""
     result = await db.execute(
         select(RentalUnit)
@@ -60,7 +71,7 @@ async def get_landlord_units(
     return result.unique().scalars().all()
 
 
-async def get_unit_detail(db: AsyncSession, unit_id: int) -> Optional[RentalUnit]:
+async def get_unit_detail(db: AsyncSession, unit_id: int) -> RentalUnit | None:
     """Get a rental unit with tenants and leases."""
     result = await db.execute(
         select(RentalUnit)
@@ -76,7 +87,7 @@ async def get_unit_detail(db: AsyncSession, unit_id: int) -> Optional[RentalUnit
 # ── Tenant Management ─────────────────────────────────────────────────────────
 
 async def add_tenant(
-    db: AsyncSession, unit_id: int, data: dict, lease_data: Optional[dict] = None,
+    db: AsyncSession, unit_id: int, data: dict, lease_data: dict | None = None,
 ) -> Tenant:
     """Add a tenant to a unit and optionally create a lease."""
     # Check unit is vacant
@@ -95,8 +106,8 @@ async def add_tenant(
         lease = Lease(
             unit_id=unit_id,
             tenant_id=tenant.id,
-            start_date=lease_data.get("start_date", datetime.now(timezone.utc)),
-            end_date=lease_data.get("end_date", datetime.now(timezone.utc) + timedelta(days=365)),
+            start_date=lease_data.get("start_date", datetime.now(UTC)),
+            end_date=lease_data.get("end_date", datetime.now(UTC) + timedelta(days=365)),
             monthly_rent_kes=lease_data.get("monthly_rent_kes", unit.monthly_rent_kes),
             deposit_kes=lease_data.get("deposit_kes", unit.deposit_kes),
             terms=lease_data.get("terms", ""),
@@ -113,7 +124,7 @@ async def add_tenant(
     return tenant
 
 
-async def get_tenant(db: AsyncSession, tenant_id: int) -> Optional[Tenant]:
+async def get_tenant(db: AsyncSession, tenant_id: int) -> Tenant | None:
     """Get tenant with lease and payment history."""
     result = await db.execute(
         select(Tenant)
@@ -126,7 +137,7 @@ async def get_tenant(db: AsyncSession, tenant_id: int) -> Optional[Tenant]:
     return result.unique().scalar_one_or_none()
 
 
-async def list_landlord_tenants(db: AsyncSession, landlord_id: int) -> List[Tenant]:
+async def list_landlord_tenants(db: AsyncSession, landlord_id: int) -> list[Tenant]:
     """Get all tenants across all units for a landlord."""
     result = await db.execute(
         select(Tenant)
@@ -141,11 +152,11 @@ async def list_landlord_tenants(db: AsyncSession, landlord_id: int) -> List[Tena
 # ── Rent Collection (M-Pesa STK Push) ─────────────────────────────────────────
 
 async def generate_monthly_rent_bills(
-    db: AsyncSession, landlord_id: int, month: str = None,
-) -> List[RentPayment]:
+    db: AsyncSession, landlord_id: int, month: str | None = None,
+) -> list[RentPayment]:
     """Generate rent payment bills for all active tenants for the current month."""
     if not month:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         month = now.strftime("%Y-%m")
 
     # Get all active tenants for this landlord
@@ -168,7 +179,7 @@ async def generate_monthly_rent_bills(
 
         lease = tenant.lease
         rent = lease.monthly_rent_kes
-        due_date = datetime.now(timezone.utc).replace(day=tenant.rent_due_day)
+        due_date = datetime.now(UTC).replace(day=tenant.rent_due_day)
 
         bill = RentPayment(
             tenant_id=tenant.id,
@@ -191,7 +202,7 @@ async def generate_monthly_rent_bills(
 
 
 async def request_rent_payment(
-    db: AsyncSession, tenant_id: int, month: str = None,
+    db: AsyncSession, tenant_id: int, month: str | None = None,
 ) -> dict:
     """
     Send M-Pesa STK Push to a tenant for rent payment.
@@ -204,7 +215,7 @@ async def request_rent_payment(
         raise ValueError("Tenant not found")
 
     if not month:
-        month = datetime.now(timezone.utc).strftime("%Y-%m")
+        month = datetime.now(UTC).strftime("%Y-%m")
 
     # Get or create rent bill
     result = await db.execute(
@@ -222,15 +233,15 @@ async def request_rent_payment(
             lease_id=tenant.lease.id if tenant.lease else None,
             amount_kes=tenant.lease.monthly_rent_kes if tenant.lease else tenant.unit.monthly_rent_kes,
             status=RentPaymentStatus.pending,
-            due_date=datetime.now(timezone.utc),
+            due_date=datetime.now(UTC),
             month=month,
         )
         db.add(bill)
         await db.commit()
 
     # Apply late fee if overdue
-    if bill.due_date and datetime.now(timezone.utc) > bill.due_date:
-        days_late = (datetime.now(timezone.utc) - bill.due_date).days
+    if bill.due_date and datetime.now(UTC) > bill.due_date:
+        days_late = (datetime.now(UTC) - bill.due_date).days
         late_fee = min(days_late * LATE_FEE_PER_DAY_KES, LATE_FEE_MAX_KES)
         bill.late_fee_kes = late_fee
         bill.amount_kes = (tenant.lease.monthly_rent_kes if tenant.lease else 0) + late_fee
@@ -261,10 +272,10 @@ async def request_rent_payment(
 
 async def record_rent_payment(
     db: AsyncSession, tenant_id: int, amount: float,
-    mpesa_receipt: str = "", payment_id: int = None,
+    mpesa_receipt: str = "", payment_id: int | None = None,
 ) -> RentPayment:
     """Record a rent payment (called by M-Pesa callback or manual entry)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     month = now.strftime("%Y-%m")
 
     # Find pending bill
@@ -315,14 +326,12 @@ async def request_payment_arrangement(
     amount_kes: float,
     number_of_installments: int,
     reason: str = "",
-    start_date: datetime = None,
+    start_date: datetime | None = None,
 ) -> PaymentArrangement:
     """
     Tenant requests a flexible payment plan.
     Example: "I can pay KES 30,000 in 3 installments of KES 10,000"
     """
-    from app.models.rental import PaymentArrangement, ArrangementStatus
-
     tenant = await get_tenant(db, tenant_id)
     if not tenant or not tenant.is_active:
         raise ValueError("Tenant not found or inactive")
@@ -330,7 +339,7 @@ async def request_payment_arrangement(
     if number_of_installments < 1 or number_of_installments > 6:
         raise ValueError("Installments must be between 1 and 6")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if not start_date:
         start_date = now
 
@@ -422,7 +431,7 @@ async def decline_payment_arrangement(
 async def get_tenant_arrangements(
     db: AsyncSession,
     tenant_id: int,
-    status: str = None,
+    status: str | None = None,
 ) -> list[PaymentArrangement]:
     """Get all payment arrangements for a tenant."""
     query = select(PaymentArrangement).where(PaymentArrangement.tenant_id == tenant_id)
@@ -435,7 +444,7 @@ async def get_tenant_arrangements(
 async def get_active_arrangement(
     db: AsyncSession,
     tenant_id: int,
-) -> Optional[PaymentArrangement]:
+) -> PaymentArrangement | None:
     """Get the currently active payment arrangement for a tenant."""
     result = await db.execute(
         select(PaymentArrangement)
@@ -478,7 +487,7 @@ async def record_installment_payment(
     inst = installments[installment_index]
     inst.amount_paid_kes = amount
     inst.status = "paid" if amount >= inst.amount_kes else "pending"
-    inst.paid_date = datetime.now(timezone.utc)
+    inst.paid_date = datetime.now(UTC)
     inst.mpesa_receipt = mpesa_receipt
 
     arr.remaining_balance_kes -= amount
@@ -503,13 +512,13 @@ async def record_partial_rent_payment(
     tenant_id: int,
     amount: float,
     mpesa_receipt: str = "",
-    payment_id: int = None,
+    payment_id: int | None = None,
 ) -> dict:
     """
     Record a partial rent payment when tenant pays less than full rent.
     Tracks remaining balance and supports multiple payments per month.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     month = now.strftime("%Y-%m")
 
     tenant = await get_tenant(db, tenant_id)
@@ -617,12 +626,12 @@ async def get_rent_collection_config(
 async def update_rent_collection_config(
     db: AsyncSession,
     lease_id: int,
-    grace_period_days: int = None,
-    late_fee_type: str = None,
-    late_fee_amount_kes: float = None,
-    late_fee_max_kes: float = None,
-    allow_partial_payments: bool = None,
-    allow_payment_arrangements: bool = None,
+    grace_period_days: int | None = None,
+    late_fee_type: str | None = None,
+    late_fee_amount_kes: float | None = None,
+    late_fee_max_kes: float | None = None,
+    allow_partial_payments: bool | None = None,
+    allow_payment_arrangements: bool | None = None,
 ) -> RentCollectionConfig:
     """Update rent collection configuration for a lease."""
     config = await get_rent_collection_config(db, lease_id)
@@ -657,7 +666,7 @@ async def calculate_late_fee_with_grace(
     if not bill.due_date:
         return 0
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if now <= bill.due_date:
         return 0
 
@@ -714,8 +723,8 @@ async def create_maintenance_request(
 
 
 async def get_unit_maintenance(
-    db: AsyncSession, unit_id: int, status: str = None,
-) -> List[MaintenanceRequest]:
+    db: AsyncSession, unit_id: int, status: str | None = None,
+) -> list[MaintenanceRequest]:
     """Get maintenance requests for a unit."""
     query = select(MaintenanceRequest).where(MaintenanceRequest.unit_id == unit_id)
     if status:
@@ -726,7 +735,7 @@ async def get_unit_maintenance(
 
 async def update_maintenance_status(
     db: AsyncSession, request_id: int, new_status: str,
-    notes: str = "", actual_cost: float = None,
+    notes: str = "", actual_cost: float | None = None,
 ) -> MaintenanceRequest:
     """Update maintenance request status (landlord action)."""
     result = await db.execute(
@@ -742,7 +751,7 @@ async def update_maintenance_status(
     if actual_cost:
         req.actual_cost_kes = actual_cost
     if new_status == "completed":
-        req.completed_at = datetime.now(timezone.utc)
+        req.completed_at = datetime.now(UTC)
 
     await db.commit()
     await db.refresh(req)
@@ -778,7 +787,7 @@ async def get_rental_dashboard(db: AsyncSession, landlord_id: int) -> dict:
         })
 
     # This month's rent
-    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    month = datetime.now(UTC).strftime("%Y-%m")
     unit_ids = [u.id for u in units]
 
     month_payments = await db.execute(

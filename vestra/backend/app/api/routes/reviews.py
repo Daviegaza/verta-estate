@@ -7,8 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.services.review_service import (
-    create_review, get_reviews_for_subject, get_reviews_by_user,
-    get_review_stats_for_property, get_top_rated_agents,
+    create_review,
+    get_review_stats_for_property,
+    get_reviews_by_user,
+    get_reviews_for_subject,
+    get_top_rated_agents,
 )
 
 router = APIRouter(prefix="/reviews", tags=["Reviews"])
@@ -41,7 +44,7 @@ async def write_review(
             "message": "Review submitted successfully.",
         }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/subject/{subject_id}")

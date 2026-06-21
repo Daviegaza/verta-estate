@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
-from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from decimal import Decimal
 
 
-class ProviderType(str, Enum):
+class ProviderType(StrEnum):
     mpesa_ke = "mpesa_ke"
     mpesa_tz = "mpesa_tz"
     stripe = "stripe"
@@ -30,11 +32,11 @@ class PaymentRequest:
     """Standardised payment request across all providers."""
     amount: Decimal
     currency: str
-    phone_number: Optional[str] = None
-    email: Optional[str] = None
+    phone_number: str | None = None
+    email: str | None = None
     reference: str = ""
     description: str = ""
-    callback_url: Optional[str] = None
+    callback_url: str | None = None
     metadata: dict = None
 
     def __post_init__(self):
@@ -47,12 +49,12 @@ class PaymentResult:
     """Standardised payment result across all providers."""
     success: bool
     provider: str
-    provider_transaction_id: Optional[str] = None
-    provider_receipt: Optional[str] = None
+    provider_transaction_id: str | None = None
+    provider_receipt: str | None = None
     status: str = "pending"       # pending, processing, completed, failed
     raw_response: dict = None
-    error_message: Optional[str] = None
-    redirect_url: Optional[str] = None  # For web-based payment flows
+    error_message: str | None = None
+    redirect_url: str | None = None  # For web-based payment flows
 
     def __post_init__(self):
         if self.raw_response is None:
@@ -93,7 +95,7 @@ class PaymentProvider(ABC):
         """Process a callback/webhook from the provider."""
         raise NotImplementedError
 
-    async def refund(self, transaction_id: str, amount: Optional[Decimal] = None) -> PaymentResult:
+    async def refund(self, transaction_id: str, amount: Decimal | None = None) -> PaymentResult:
         """Refund a payment. Not all providers support this."""
         return PaymentResult(
             success=False,
@@ -116,7 +118,7 @@ def register_provider(provider_type: ProviderType, provider_cls: type[PaymentPro
     _provider_registry[provider_type] = provider_cls
 
 
-def get_provider(provider_type: ProviderType) -> Optional[PaymentProvider]:
+def get_provider(provider_type: ProviderType) -> PaymentProvider | None:
     """Instantiate a registered payment provider."""
     cls = _provider_registry.get(provider_type)
     if cls is None:
@@ -124,7 +126,7 @@ def get_provider(provider_type: ProviderType) -> Optional[PaymentProvider]:
     return cls()
 
 
-def get_provider_for_country(country_code: str, method: str = "mobile_money") -> Optional[PaymentProvider]:
+def get_provider_for_country(country_code: str, method: str = "mobile_money") -> PaymentProvider | None:
     """Get the default payment provider for a country."""
     country_providers = {
         "KE": ProviderType.mpesa_ke if method == "mobile_money" else ProviderType.stripe,
@@ -152,7 +154,7 @@ def list_available_providers() -> list[dict]:
     ]
 
 
-def get_provider_by_method(method: str) -> Optional[PaymentProvider]:
+def get_provider_by_method(method: str) -> PaymentProvider | None:
     """Resolve a provider by its method name string."""
     method_map = {
         "mpesa": ProviderType.mpesa_ke,

@@ -2,11 +2,10 @@
 Analytics & Data Collection models — user behavior tracking, price history,
 verification outcomes. Foundation for future ML models.
 """
-from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, JSON, Numeric, ForeignKey, Text
-)
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from app.core.database import Base
 
 

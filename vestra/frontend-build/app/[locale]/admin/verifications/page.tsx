@@ -6,21 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/card';
 import api from '@/lib/api';
+import type { Verification } from '@/types';
 import { CheckCircle, XCircle, AlertCircle, Clock, Shield, Search, Filter, ChevronDown, Eye } from 'lucide-react';
-
-interface PendingVerification {
-  id: number; property_id: number | null;
-  fraud_risk_score: number | null; trust_score: number | null;
-  ai_recommendation: string | null; status: string;
-  created_at: string;
-}
 
 export default function AdminVerificationsPage() {
   return <AuthGuard requireAuth requireAdmin><VerificationsContent /></AuthGuard>;
 }
 
 function VerificationsContent() {
-  const [verifications, setVerifications] = useState<PendingVerification[]>([]);
+  const [verifications, setVerifications] = useState<Verification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('pending');
@@ -29,14 +23,12 @@ function VerificationsContent() {
   const [notes, setNotes] = useState('');
   const [message, setMessage] = useState('');
 
-  useEffect(() => { loadData(); }, [filter]);
-
   const loadData = async () => {
     setLoading(true); setError('');
     try {
       const data = await api.getPendingVerifications(50);
       if (Array.isArray(data)) {
-        setVerifications(data.filter((v: PendingVerification) =>
+        setVerifications(data.filter((v: Verification) =>
           filter === 'all' ? true : v.status === filter
         ));
       }
@@ -44,6 +36,8 @@ function VerificationsContent() {
       setError('Failed to load verifications');
     } finally { setLoading(false); }
   };
+
+  useEffect(() => { loadData(); }, [filter]);
 
   const handleReview = async (id: number, status: string) => {
     setReviewing(true);

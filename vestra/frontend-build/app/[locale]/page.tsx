@@ -84,6 +84,8 @@ export default function HomePage() {
   const { items: recentViews, hydrated: rvHydrated, clearAll: clearRecent, removeItem: removeRecent } = useRecentlyViewed();
   const [aiQuery, setAiQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+  // eslint-disable-next-line react-hooks/purity -- Snapshot current time for relative time display
+  const now = Date.now();
 
   const suggestions = aiQuery.trim()
     ? POPULAR_SEARCHES.filter((s) =>
@@ -275,7 +277,7 @@ export default function HomePage() {
                   <div className="flex items-center gap-2 mb-2">
                     <Eye className="w-3.5 h-3.5 text-gray-400" />
                     <span className="text-xs text-gray-400">
-                      {Math.round((Date.now() - item.viewedAt) / 60000)}m ago
+                      {Math.round((now - item.viewedAt) / 60000)}m ago
                     </span>
                   </div>
                   <h3 className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 mb-2 group-hover:text-emerald-700 transition-colors">
@@ -329,7 +331,7 @@ export default function HomePage() {
                   <Star key={i} className="w-4 h-4 text-amber-400 fill-amber-400" />
                 ))}
               </div>
-              <p className="text-gray-700 text-sm leading-relaxed mb-6">"{t.text}"</p>
+              <p className="text-gray-700 text-sm leading-relaxed mb-6">{'“'}{t.text}{'”'}</p>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
                   <span className="text-emerald-700 font-semibold">{t.name[0]}</span>

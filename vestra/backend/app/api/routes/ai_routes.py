@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.services.valuation_service import valuate_property, get_market_insights
 from app.services.ai_service import generate_ai_property_search
-from app.services.smart_ai_service import smart_search, get_property_smart_insights
 from app.services.property_service import get_property_by_id
+from app.services.smart_ai_service import get_property_smart_insights, smart_search
+from app.services.valuation_service import get_market_insights, valuate_property
 
 router = APIRouter(prefix="/ai", tags=["Vestra AI"])
 
@@ -129,8 +130,9 @@ async def vestima_estimate(
     Returns estimated value, confidence range, comparables, price per sq ft, and market trend.
     Cached for 1 hour behind the scenes.
     """
-    from app.services.vestima_service import get_cached_vestima_estimate
     from fastapi import HTTPException
+
+    from app.services.vestima_service import get_cached_vestima_estimate
 
     result = await get_cached_vestima_estimate(db, property_id)
     if result is None:
@@ -165,8 +167,9 @@ async def vestima_estimate_history(
     Historical Vestima estimates for a property.
     Shows how the AI's valuation has trended over time.
     """
-    from app.services.vestima_service import get_vestima_history
     from fastapi import HTTPException
+
+    from app.services.vestima_service import get_vestima_history
 
     result = await get_vestima_history(db, property_id, limit=limit)
     if not result:

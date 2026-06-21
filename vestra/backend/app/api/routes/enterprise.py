@@ -2,18 +2,24 @@
 Enterprise API routes — API key management, webhooks, usage analytics, metrics.
 For B2B clients: banks, SACCOs, insurers paying KES 25K-150K/month.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.services.api_key_service import (
-    create_api_key, get_user_keys, revoke_api_key, get_api_key_usage,
-    validate_api_key, record_api_key_usage,
+    create_api_key,
+    get_api_key_usage,
+    get_user_keys,
+    record_api_key_usage,
+    revoke_api_key,
+    validate_api_key,
 )
 from app.services.webhook_service import (
-    register_webhook, get_user_webhooks, delete_webhook,
+    delete_webhook,
+    get_user_webhooks,
+    register_webhook,
 )
 
 router = APIRouter(prefix="/enterprise", tags=["Enterprise API"])
@@ -24,7 +30,7 @@ router = APIRouter(prefix="/enterprise", tags=["Enterprise API"])
 
 async def resolve_api_key(
     request: Request,
-    x_api_key: Optional[str] = Header(None),
+    x_api_key: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """

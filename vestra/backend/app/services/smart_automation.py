@@ -17,15 +17,18 @@ fire — without anyone clicking a button.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional, List
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
+
+from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
-from app.models.rental import RentPayment, RentPaymentStatus, RentalUnit, Tenant, Lease, LeaseStatus
-from app.models.payment import Payment, PaymentStatus, PaymentPurpose
-from app.models.user import User, UserRole
+from app.models.payment import Payment, PaymentPurpose
+from app.models.rental import Lease, LeaseStatus, RentalUnit, RentPayment, RentPaymentStatus, Tenant
+from app.models.user import User
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -40,7 +43,7 @@ LATE_FEE_MAX_KES = 3000
 async def auto_update_rent_on_payment(
     db: AsyncSession,
     payment: Payment,
-) -> Optional[dict]:
+) -> dict | None:
     """
     When a rent M-Pesa payment completes:
     1. Find the matching RentPayment record for this month
@@ -54,7 +57,7 @@ async def auto_update_rent_on_payment(
     if payment.purpose != PaymentPurpose.rent and 'rent' not in (payment.description or '').lower():
         return None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     month = now.strftime("%Y-%m")
 
     # Find the tenant associated with the paying phone number
@@ -65,7 +68,7 @@ async def auto_update_rent_on_payment(
     result = await db.execute(
         select(Tenant)
         .options(joinedload(Tenant.unit).joinedload(RentalUnit.landlord))
-        .where(Tenant.phone == phone, Tenant.is_active == True)
+        .where(Tenant.phone == phone, Tenant.is_active)
         .limit(1)
     )
     tenant = result.unique().scalar_one_or_none()
@@ -138,7 +141,7 @@ async def auto_update_rent_on_payment(
             title="💰 Rent Paid!",
             body=f"{tenant.full_name} paid KES {float(payment.amount):,.0f} for {unit.name} — {month}",
             notification_type="rent_paid",
-            action_url=f"/dashboard/landlord",
+            action_url="/dashboard/landlord",
         )
 
     # ── Notify Tenant (Receipt Ready) ─────────────────────────────────────
@@ -154,7 +157,7 @@ async def auto_update_rent_on_payment(
             title="✅ Payment Confirmed",
             body=f"Your rent of KES {float(payment.amount):,.0f} for {unit.name} has been received. Receipt #RCP-{rent_bill.id:06d}",
             notification_type="rent_receipt",
-            action_url=f"/dashboard/tenant",
+            action_url="/dashboard/tenant",
         )
 
     logger.info(
@@ -174,7 +177,7 @@ async def send_rent_due_reminders(db: AsyncSession) -> dict:
     Send reminders to tenants whose rent is due in 3 days.
     Should be called by a daily cron/scheduler.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     reminder_date = now + timedelta(days=3)
     due_day = reminder_date.day
     month = now.strftime("%Y-%m")
@@ -182,7 +185,7 @@ async def send_rent_due_reminders(db: AsyncSession) -> dict:
     result = await db.execute(
         select(Tenant)
         .options(joinedload(Tenant.unit), joinedload(Tenant.lease))
-        .where(Tenant.is_active == True, Tenant.rent_due_day == due_day)
+        .where(Tenant.is_active, Tenant.rent_due_day == due_day)
     )
     tenants = result.unique().scalars().all()
 
@@ -240,7 +243,7 @@ async def send_rent_due_reminders(db: AsyncSession) -> dict:
 
 async def send_lease_expiry_alerts(db: AsyncSession) -> dict:
     """Alert landlords about leases expiring within 30 days."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expiry_threshold = now + timedelta(days=30)
 
     result = await db.execute(
@@ -268,7 +271,7 @@ async def send_lease_expiry_alerts(db: AsyncSession) -> dict:
                 title="⚠️ Lease Expiring Soon",
                 body=f"Lease for {tenant.full_name if tenant else 'tenant'} in {unit.name} expires in {days_left} days. Consider renewal.",
                 notification_type="lease_expiry",
-                action_url=f"/dashboard/landlord/tenants",
+                action_url="/dashboard/landlord/tenants",
             )
 
             # Auto-mark lease as expiring_soon
@@ -290,10 +293,10 @@ async def send_price_drop_alerts(db: AsyncSession, property_id: int, old_price: 
     if new_price >= old_price:
         return 0
 
-    from app.models.kyc_notification import SavedProperty as SP
+    from app.models.kyc_notification import SavedProperty as SavedProp
 
     result = await db.execute(
-        select(SP).where(SP.property_id == property_id)
+        select(SavedProp).where(SavedProp.property_id == property_id)
     )
     saved = result.scalars().all()
 
@@ -323,7 +326,7 @@ async def match_saved_searches(db: AsyncSession, property_id: int) -> int:
         return 0
 
     result = await db.execute(
-        select(SavedSearch).where(SavedSearch.notify_email == True)
+        select(SavedSearch).where(SavedSearch.notify_email)
     )
     searches = result.scalars().all()
 
@@ -354,6 +357,7 @@ async def match_saved_searches(db: AsyncSession, property_id: int) -> int:
 
 async def notify_agent_on_inquiry(db: AsyncSession, property_id: int, inquiry_count: int) -> None:
     """Notify the agent when their listing gets a new inquiry."""
+    from app.models.property import Property
     result = await db.execute(
         select(Property).options(joinedload(Property.owner)).where(Property.id == property_id)
     )
@@ -406,7 +410,7 @@ async def send_notification(
     title: str,
     body: str,
     notification_type: str = "info",
-    action_url: Optional[str] = None,
+    action_url: str | None = None,
     send_whatsapp: bool = False,
 ):
     """Send an in-app notification. Optionally also send via WhatsApp."""

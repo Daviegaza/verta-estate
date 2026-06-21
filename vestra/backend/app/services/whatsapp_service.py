@@ -6,17 +6,14 @@ Uses Meta's WhatsApp Cloud API (graph.facebook.com).
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
 import hashlib
 import hmac
-from typing import Optional, Any
-from datetime import datetime
+import logging
 
 import httpx
 
-from app.core.config import settings
 from app.ai.engine import vestra_ai
+from app.core.config import settings
 
 logger = logging.getLogger("vestra")
 
@@ -32,7 +29,7 @@ WHATSAPP_BUSINESS_ID = settings.WHATSAPP_BUSINESS_ID
 
 # ── Webhook Verification ───────────────────────────────────────────────────────
 
-def verify_webhook(mode: str, token: str, challenge: str) -> Optional[str]:
+def verify_webhook(mode: str, token: str, challenge: str) -> str | None:
     """
     Verify WhatsApp webhook subscription.
     Meta sends GET with hub.mode, hub.verify_token, hub.challenge.
@@ -75,7 +72,7 @@ async def send_template_message(
     to_phone: str,
     template_name: str,
     language: str = "en",
-    parameters: Optional[list[dict]] = None,
+    parameters: list[dict] | None = None,
 ) -> dict:
     """Send a WhatsApp template message."""
     payload = {
@@ -457,7 +454,7 @@ async def process_webhook_event(entry: dict) -> list[dict]:
                     responses.append(response)
 
             elif msg_type in ("image", "document"):
-                caption = msg.get(msg_type, {}).get("caption", "Document received")
+                msg.get(msg_type, {}).get("caption", "Document received")
                 response = await send_text_message(
                     from_phone,
                     f"📎 Received your {msg_type}. Our team will review it and get back to you.\n\n"

@@ -1,54 +1,62 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from app.core.database import get_db
-from app.core.security import get_current_user
-from app.core.config import settings
-from app.schemas.verification import MpesaPaymentRequest, PaymentResponse
-from app.services.payment_service import (
-    initiate_mpesa_payment, handle_mpesa_callback,
-    get_payment_by_id, get_user_payments,
-    process_stripe_payment_intent,
-    refund_payment_stripe, refund_payment_mpesa,
-)
-from app.services.verification_service import (
-    create_verification_request, run_ai_verification
-)
-from app.services.payment_providers import (
-    list_available_providers, get_provider_by_method,
-    PaymentRequest as ProvPaymentRequest,
-)
-import app.services.paypal_provider  # noqa: F401 — registers PayPalProvider
-import app.services.bank_transfer_provider  # noqa: F401 — registers BankTransferProvider
-import app.services.crypto_provider  # noqa: F401 — registers CryptoProvider
-import app.services.airtel_money_provider  # noqa: F401 — registers AirtelMoneyProvider
-from app.models.payment import PaymentMethod, PaymentPurpose, PaymentStatus
-from app.models.user import UserRole
-from app.core.redis import cache_delete, check_and_mark_processed
-from app.schemas.shared import SuccessResponse
-from pydantic import BaseModel
-from typing import Optional
 import asyncio
 import hashlib
 import hmac
 import logging
 import uuid as _uuid
+from datetime import UTC
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+import app.services.airtel_money_provider
+import app.services.bank_transfer_provider
+import app.services.crypto_provider
+import app.services.paypal_provider  # noqa: F401 — registers PayPalProvider
+from app.core.config import settings
+from app.core.database import get_db
+from app.core.redis import cache_delete, check_and_mark_processed
+from app.core.security import get_current_user
+from app.models.payment import Payment, PaymentMethod, PaymentPurpose, PaymentStatus
+from app.models.user import UserRole
+from app.schemas.verification import MpesaPaymentRequest, PaymentResponse
+from app.services.payment_providers import (
+    PaymentRequest as ProvPaymentRequest,
+)
+from app.services.payment_providers import (
+    get_provider_by_method,
+    list_available_providers,
+)
+from app.services.payment_service import (
+    get_payment_by_id,
+    get_user_payments,
+    handle_mpesa_callback,
+    initiate_mpesa_payment,
+    process_stripe_payment_intent,
+    refund_payment_mpesa,
+    refund_payment_stripe,
+)
+from app.services.verification_service import create_verification_request, run_ai_verification
 
 logger = logging.getLogger("vestra")
+
+# Background task references to prevent garbage collection of asyncio tasks
+_background_tasks: set[asyncio.Task] = set()
 
 
 # ── Pydantic schemas for new endpoints ──────────────────────────────────────
 
 
 class InitiatePaymentRequest(BaseModel):
-    phone_number: Optional[str] = None
-    email: Optional[str] = None
+    phone_number: str | None = None
+    email: str | None = None
     amount: float
     currency: str = "KES"
     purpose: str = "verification_report"
-    reference_id: Optional[int] = None
+    reference_id: int | None = None
     description: str = "Vestra Payment"
-    callback_url: Optional[str] = None
+    callback_url: str | None = None
     metadata: dict = {}
 
 
@@ -203,7 +211,7 @@ async def initiate_payment(
         try:
             purpose = PaymentPurpose(data.purpose)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid payment purpose: {data.purpose}")
+            raise HTTPException(status_code=400, detail=f"Invalid payment purpose: {data.purpose}") from None
 
         payment = await initiate_mpesa_payment(
             db=db,
@@ -234,7 +242,7 @@ async def initiate_payment(
         try:
             purpose = PaymentPurpose(data.purpose)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid payment purpose: {data.purpose}")
+            raise HTTPException(status_code=400, detail=f"Invalid payment purpose: {data.purpose}") from None
 
         from app.models.payment import Payment
         reference = f"STR-{_uuid.uuid4().hex[:10].upper()}"
@@ -350,7 +358,7 @@ async def initiate_mpesa(
     try:
         purpose = PaymentPurpose(data.purpose)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid payment purpose: {data.purpose}")
+        raise HTTPException(status_code=400, detail=f"Invalid payment purpose: {data.purpose}") from None
 
     payment = await initiate_mpesa_payment(
         db=db,
@@ -435,15 +443,18 @@ async def mpesa_callback(
         ref_id = payment.payment_metadata.get("reference_id") if payment.payment_metadata else None
 
         # ── Fire event bus: payment completed ──────────────────────────────
-        from app.services.event_bus import emit_event, EVENT_PAYMENT_COMPLETED
-        asyncio.create_task(
+        _task = asyncio.create_task(
             _bg_emit_event_after_payment(payment)
         )
+        _background_tasks.add(_task)
+        _task.add_done_callback(_background_tasks.discard)
 
         # ── Send payment receipt notification ──────────────────────────────
-        asyncio.create_task(
+        _task2 = asyncio.create_task(
             _bg_send_payment_receipt(payment)
         )
+        _background_tasks.add(_task2)
+        _task2.add_done_callback(_background_tasks.discard)
 
         # ── Rent Payment Auto-Update ───────────────────────────────────────
         # If this was a rent payment, auto-update the RentPayment record,
@@ -451,9 +462,11 @@ async def mpesa_callback(
         if payment.purpose == PaymentPurpose.rent or (
             payment.description and 'rent' in payment.description.lower()
         ):
-            asyncio.create_task(
+            _task3 = asyncio.create_task(
                 _bg_handle_rent_payment_completed(payment, db)
             )
+            _background_tasks.add(_task3)
+            _task3.add_done_callback(_background_tasks.discard)
 
         # Handle verification report payment
         if payment.purpose == PaymentPurpose.verification_report and ref_id:
@@ -462,10 +475,12 @@ async def mpesa_callback(
 
         # Handle subscription payment
         if payment.purpose == PaymentPurpose.subscription:
+            from app.models.user import User
             from app.services.subscription_service import (
-                get_subscription_orm, create_subscription, renew_subscription, upgrade_subscription
+                create_subscription,
+                get_subscription_orm,
+                renew_subscription,
             )
-            from app.models.user import User, UserRole
             result = await db.execute(select(User).where(User.id == payment.user_id))
             user = result.scalar_one_or_none()
 
@@ -492,11 +507,12 @@ async def mpesa_callback(
 
         # Handle listing fee payment → activate featured listing
         if payment.purpose == PaymentPurpose.listing_fee and ref_id:
-            from datetime import datetime, timedelta, timezone
+            from datetime import datetime, timedelta
+
             from app.services.property_service import get_property_by_id
             prop = await get_property_by_id(db, ref_id)
             if prop:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 prop.is_featured = True
                 prop.featured_expires_at = now + timedelta(days=30)
                 await db.commit()
@@ -552,13 +568,13 @@ async def paypal_callback(
     import json as _json
 
     payload = await request.body()
-    headers_dict = {k: v for k, v in request.headers.items()}
+    headers_dict = dict(request.headers.items())
 
     try:
         raw_data = _json.loads(payload.decode())
     except Exception:
         logger.warning('{"event":"paypal_webhook_blocked","reason":"invalid_json"}')
-        raise HTTPException(status_code=400, detail="Invalid payload")
+        raise HTTPException(status_code=400, detail="Invalid payload") from None
 
     event_id = raw_data.get("id", "unknown")
     event_type = raw_data.get("event_type", "unknown")
@@ -606,7 +622,9 @@ async def paypal_callback(
                     '{"event":"paypal_payment_completed","capture":"%s","payment_id":%d}',
                     capture_id, payment.id,
                 )
-                asyncio.create_task(_bg_emit_event_after_payment(payment))
+                _task4 = asyncio.create_task(_bg_emit_event_after_payment(payment))
+                _background_tasks.add(_task4)
+                _task4.add_done_callback(_background_tasks.discard)
         else:
             logger.info(
                 '{"event":"paypal_payment_completed","resource":"%s"}',
@@ -653,7 +671,7 @@ async def airtel_callback(
     import json as _json
 
     payload = await request.body()
-    headers_dict = {k: v for k, v in request.headers.items()}
+    headers_dict = dict(request.headers.items())
 
     try:
         raw_data = _json.loads(payload.decode())
@@ -705,7 +723,9 @@ async def airtel_callback(
                 '{"event":"airtel_payment_completed","transaction_id":"%s","payment_id":%d}',
                 transaction_id, payment.id,
             )
-            asyncio.create_task(_bg_emit_event_after_payment(payment))
+            _task = asyncio.create_task(_bg_emit_event_after_payment(payment))
+            _background_tasks.add(_task)
+            _task.add_done_callback(_background_tasks.discard)
 
     elif status_code in ("404", "500", "FAILED", "TF"):
         from app.models.payment import Payment
@@ -754,10 +774,10 @@ async def stripe_callback(
         )
     except ValueError:
         logger.warning('{"event":"stripe_webhook_blocked","reason":"invalid_payload"}')
-        raise HTTPException(status_code=400, detail="Invalid payload")
+        raise HTTPException(status_code=400, detail="Invalid payload") from None
     except stripe.error.SignatureVerificationError:
         logger.warning('{"event":"stripe_webhook_blocked","reason":"invalid_signature"}')
-        raise HTTPException(status_code=400, detail="Invalid signature")
+        raise HTTPException(status_code=400, detail="Invalid signature") from None
 
     event_id = event.get("id", "unknown")
     event_type = event.get("type", "unknown")
@@ -785,14 +805,17 @@ async def stripe_callback(
             ref_id = payment.payment_metadata.get("reference_id") if payment.payment_metadata else None
 
             # Fire event bus
-            from app.services.event_bus import emit_event, EVENT_PAYMENT_COMPLETED
-            asyncio.create_task(_bg_emit_event_after_payment(payment))
+            _task = asyncio.create_task(_bg_emit_event_after_payment(payment))
+            _background_tasks.add(_task)
+            _task.add_done_callback(_background_tasks.discard)
 
             # Rent payment auto-update
             if payment.purpose == PaymentPurpose.rent or (
                 payment.description and 'rent' in payment.description.lower()
             ):
-                asyncio.create_task(_bg_handle_rent_payment_completed(payment, db))
+                _task = asyncio.create_task(_bg_handle_rent_payment_completed(payment, db))
+                _background_tasks.add(_task)
+                _task.add_done_callback(_background_tasks.discard)
 
             # Verification report
             if payment.purpose == PaymentPurpose.verification_report and ref_id:
@@ -803,10 +826,12 @@ async def stripe_callback(
 
             # Subscription
             if payment.purpose == PaymentPurpose.subscription:
-                from app.services.subscription_service import (
-                    get_subscription_orm, create_subscription, renew_subscription,
-                )
                 from app.models.user import User
+                from app.services.subscription_service import (
+                    create_subscription,
+                    get_subscription_orm,
+                    renew_subscription,
+                )
                 result = await db.execute(select(User).where(User.id == payment.user_id))
                 user = result.scalar_one_or_none()
                 if user:
@@ -821,11 +846,12 @@ async def stripe_callback(
 
             # Listing fee / featured
             if payment.purpose == PaymentPurpose.listing_fee and ref_id:
-                from datetime import datetime, timedelta, timezone
+                from datetime import datetime, timedelta
+
                 from app.services.property_service import get_property_by_id
                 prop = await get_property_by_id(db, ref_id)
                 if prop:
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     prop.is_featured = True
                     prop.featured_expires_at = now + timedelta(days=30)
                     await db.commit()
@@ -901,7 +927,7 @@ async def refund_payment(
         try:
             result = await refund_payment_stripe(db, payment)
         except ValueError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise HTTPException(status_code=502, detail=str(e)) from e
     elif payment.method == PaymentMethod.mpesa:
         result = await refund_payment_mpesa(db, payment)
     else:
@@ -915,7 +941,7 @@ async def refund_payment(
 
 async def _bg_emit_event_after_payment(payment) -> None:
     """Fire-and-forget: emit payment.completed event."""
-    from app.services.event_bus import emit_event, EVENT_PAYMENT_COMPLETED
+    from app.services.event_bus import EVENT_PAYMENT_COMPLETED, emit_event
 
     try:
         data = {

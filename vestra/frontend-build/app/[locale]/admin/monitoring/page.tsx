@@ -113,9 +113,9 @@ export default function MonitoringDashboard() {
         api.getDatabaseMetrics().catch(() => null),
         api.getRedisMetrics().catch(() => null),
       ]);
-      if (h) setHealth(h);
-      if (db) setDbMetrics(db);
-      if (rds) setRedisMetrics(rds);
+      if (h) setHealth(h as unknown as FullHealth);
+      if (db) setDbMetrics(db as unknown as DBMetrics);
+      if (rds) setRedisMetrics(rds as unknown as RedisMetrics);
       setLastRefresh(new Date());
       setError('');
     } catch {

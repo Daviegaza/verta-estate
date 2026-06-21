@@ -3,14 +3,18 @@ TitleChain API routes — immutable property title history endpoints.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
+from app.core.security import get_current_admin, get_current_user
 from app.models.user import UserRole
 from app.services.property_service import get_property_by_id
 from app.services.title_chain import title_chain
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/title-chain", tags=["TitleChain"])
 
@@ -124,7 +128,7 @@ async def append_block(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
-        )
+        ) from e
 
     return {
         "message": "Block appended to title chain",

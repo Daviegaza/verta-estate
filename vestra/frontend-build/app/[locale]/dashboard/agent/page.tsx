@@ -34,8 +34,6 @@ function AgentContent() {
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { loadData(); }, []);
-
   const loadData = async () => {
     setLoading(true);
     try {
@@ -49,6 +47,8 @@ function AgentContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => { loadData(); }, []);
 
   const activeListings = useMemo(() => properties.filter(p => p.status === 'active').length, [properties]);
   const totalViews = useMemo(() => properties.reduce((sum, p) => sum + (p.views || 0), 0), [properties]);

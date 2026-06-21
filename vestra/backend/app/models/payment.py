@@ -1,11 +1,13 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Float, Numeric, ForeignKey, JSON, Text
+import enum
+
+from sqlalchemy import JSON, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import enum
+
 from app.core.database import Base
 
 
-class PaymentStatus(str, enum.Enum):
+class PaymentStatus(enum.StrEnum):
     pending = "pending"
     processing = "processing"
     completed = "completed"
@@ -13,7 +15,7 @@ class PaymentStatus(str, enum.Enum):
     refunded = "refunded"
 
 
-class PaymentMethod(str, enum.Enum):
+class PaymentMethod(enum.StrEnum):
     mpesa = "mpesa"
     stripe = "stripe"
     bank_transfer = "bank_transfer"
@@ -22,7 +24,7 @@ class PaymentMethod(str, enum.Enum):
     crypto = "crypto"
 
 
-class PaymentPurpose(str, enum.Enum):
+class PaymentPurpose(enum.StrEnum):
     verification_report = "verification_report"
     agent_badge = "agent_badge"
     listing_fee = "listing_fee"

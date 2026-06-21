@@ -5,16 +5,21 @@ Handles card payments, webhook verification, and refunds.
 from __future__ import annotations
 
 import logging
-from decimal import Decimal
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import stripe
 
 from app.core.config import settings
 from app.services.payment_providers import (
-    PaymentProvider, PaymentRequest, PaymentResult, ProviderType,
+    PaymentProvider,
+    PaymentRequest,
+    PaymentResult,
+    ProviderType,
     register_provider,
 )
+
+if TYPE_CHECKING:
+    from decimal import Decimal
 
 logger = logging.getLogger("vestra")
 
@@ -125,7 +130,7 @@ class StripeProvider(PaymentProvider):
                 raw_response=raw_data,
             )
 
-    async def refund(self, transaction_id: str, amount: Optional[Decimal] = None) -> PaymentResult:
+    async def refund(self, transaction_id: str, amount: Decimal | None = None) -> PaymentResult:
         """Refund a Stripe payment."""
         if not settings.STRIPE_SECRET_KEY:
             return PaymentResult(

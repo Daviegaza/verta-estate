@@ -4,11 +4,10 @@ Uses SMTP (SendGrid / Mailgun / AWS SES compatible).
 """
 from __future__ import annotations
 
-import smtplib
 import logging
-from email.mime.text import MIMEText
+import smtplib
 from email.mime.multipart import MIMEMultipart
-from typing import Optional
+from email.mime.text import MIMEText
 
 from app.core.config import settings
 
@@ -19,7 +18,7 @@ async def send_email(
     to_email: str,
     subject: str,
     html_body: str,
-    text_body: Optional[str] = None,
+    text_body: str | None = None,
 ) -> bool:
     """Send a transactional email. Returns True on success."""
     if not settings.SMTP_HOST:

@@ -4,22 +4,24 @@ Handles incoming messages, webhook verification, and outbound messaging.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, HTTPException, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+from typing import TYPE_CHECKING
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
+from app.core.security import get_current_admin, get_current_user
 from app.services.whatsapp_service import (
+    process_webhook_event,
+    send_payment_request,
+    send_property_card,
+    send_text_message,
+    send_verification_report,
     verify_webhook,
     verify_webhook_signature,
-    process_webhook_event,
-    send_text_message,
-    send_template_message,
-    send_property_card,
-    send_verification_report,
-    send_payment_request,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
 

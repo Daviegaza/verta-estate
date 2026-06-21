@@ -11,17 +11,22 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import httpx
 
 from app.core.config import settings
 from app.services.payment_providers import (
-    PaymentProvider, PaymentRequest, PaymentResult, ProviderType,
+    PaymentProvider,
+    PaymentRequest,
+    PaymentResult,
+    ProviderType,
     register_provider,
 )
+
+if TYPE_CHECKING:
+    from decimal import Decimal
 
 logger = logging.getLogger("vestra")
 
@@ -143,7 +148,7 @@ class CryptoProvider(PaymentProvider):
                     f"Payment will be confirmed after {settings.CRYPTO_CONFIRMATIONS_REQUIRED} "
                     f"block confirmations."
                 ),
-                "expires_at": datetime.now(timezone.utc).isoformat(),
+                "expires_at": datetime.now(UTC).isoformat(),
             },
         )
 
@@ -296,7 +301,7 @@ class CryptoProvider(PaymentProvider):
             activity = event_data.get("activity", [])
             for tx in activity:
                 tx_hash = tx.get("hash", "")
-                value_hex = tx.get("value", "0x0")
+                tx.get("value", "0x0")
                 asset = tx.get("asset", "USDT").upper()
 
                 if asset in SUPPORTED_ASSETS:
@@ -316,7 +321,7 @@ class CryptoProvider(PaymentProvider):
             raw_response=raw_data,
         )
 
-    async def refund(self, transaction_id: str, amount: Optional[Decimal] = None) -> PaymentResult:
+    async def refund(self, transaction_id: str, amount: Decimal | None = None) -> PaymentResult:
         """Crypto refunds require a manual transfer from the wallet."""
         return PaymentResult(
             success=False,

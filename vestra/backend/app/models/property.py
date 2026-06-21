@@ -1,14 +1,25 @@
+import enum
+
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, Enum, Text,
-    Float, Numeric, ForeignKey, JSON
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import enum
+
 from app.core.database import Base
 
 
-class PropertyType(str, enum.Enum):
+class PropertyType(enum.StrEnum):
     residential = "residential"
     commercial = "commercial"
     land = "land"
@@ -18,13 +29,13 @@ class PropertyType(str, enum.Enum):
     short_stay = "short_stay"
 
 
-class ListingType(str, enum.Enum):
+class ListingType(enum.StrEnum):
     sale = "sale"
     rent = "rent"
     lease = "lease"
 
 
-class PropertyStatus(str, enum.Enum):
+class PropertyStatus(enum.StrEnum):
     draft = "draft"
     pending_review = "pending_review"
     active = "active"

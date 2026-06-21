@@ -8,15 +8,20 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.services.payment_providers import (
-    PaymentProvider, PaymentRequest, PaymentResult, ProviderType,
+    PaymentProvider,
+    PaymentRequest,
+    PaymentResult,
+    ProviderType,
     register_provider,
 )
+
+if TYPE_CHECKING:
+    from decimal import Decimal
 
 logger = logging.getLogger("vestra")
 
@@ -62,7 +67,7 @@ class BankTransferProvider(PaymentProvider):
         """
         # Generate a unique virtual payment reference
         reference = request.reference or f"VST-{uuid.uuid4().hex[:10].upper()}"
-        virtual_ref = f"VPAY-{hashlib.md5(reference.encode()).hexdigest()[:8].upper()}-{datetime.now(timezone.utc).strftime('%y%m%d')}"
+        virtual_ref = f"VPAY-{hashlib.md5(reference.encode()).hexdigest()[:8].upper()}-{datetime.now(UTC).strftime('%y%m%d')}"
 
         bank_accounts = []
         for bank_code, info in KENYAN_BANKS.items():
@@ -117,7 +122,7 @@ class BankTransferProvider(PaymentProvider):
             raw_response={
                 "virtual_reference": virtual_reference,
                 "bank_code": bank_code,
-                "confirmed_at": datetime.now(timezone.utc).isoformat(),
+                "confirmed_at": datetime.now(UTC).isoformat(),
             },
         )
 
@@ -135,7 +140,7 @@ class BankTransferProvider(PaymentProvider):
             error_message=reason,
             raw_response={
                 "virtual_reference": virtual_reference,
-                "rejected_at": datetime.now(timezone.utc).isoformat(),
+                "rejected_at": datetime.now(UTC).isoformat(),
             },
         )
 
@@ -153,7 +158,7 @@ class BankTransferProvider(PaymentProvider):
             raw_response=raw_data,
         )
 
-    async def refund(self, transaction_id: str, amount: Optional[Decimal] = None) -> PaymentResult:
+    async def refund(self, transaction_id: str, amount: Decimal | None = None) -> PaymentResult:
         """Bank transfer refunds require manual bank transfer."""
         return PaymentResult(
             success=False,

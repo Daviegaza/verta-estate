@@ -40,10 +40,6 @@ function SettingsContent() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
-
   const loadProfile = async () => {
     setLoading(true);
     setError('');
@@ -62,6 +58,10 @@ function SettingsContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadProfile();
+  }, []);
 
   const handleChange = (field: keyof ProfileForm) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>

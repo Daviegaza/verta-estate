@@ -1,24 +1,36 @@
-import logging
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from typing import Optional
 import asyncio
-from datetime import datetime, timezone
-from app.models.document import Verification, VerificationStatus, Document
+import logging
+from datetime import UTC, datetime
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.redis import cache_delete
+from app.models.document import Document, Verification, VerificationStatus
 from app.models.property import Property
 from app.models.user import User
 from app.services.ai_service import analyze_property_with_ai
 from app.services.property_service import get_property_by_id
 
 logger = logging.getLogger("vestra")
-from app.core.redis import cache_delete
+
+# ── Background task tracking (prevents GC of async tasks) ───────────────────
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _fire_and_forget(coro):
+    """Fire a coroutine as a background task with persistent reference."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
 
 
 async def create_verification_request(
     db: AsyncSession,
     property_id: int,
     requester_id: int,
-    payment_id: Optional[int] = None,
+    payment_id: int | None = None,
 ) -> Verification:
     verification = Verification(
         property_id=property_id,
@@ -51,7 +63,7 @@ async def run_ai_verification(
     # ── Fire analytics: verification_requested ────────────────────────────
     from app.services.analytics_service import fire_and_forget_track_user_event
 
-    asyncio.create_task(
+    _fire_and_forget(
         fire_and_forget_track_user_event(
             user_id=verification.user_id,
             event_type="verification_requested",
@@ -154,7 +166,7 @@ async def run_ai_verification(
     await cache_delete("vestra:admin:stats")
 
     # ── Fire analytics: verification_completed ────────────────────────────
-    asyncio.create_task(
+    _fire_and_forget(
         fire_and_forget_track_user_event(
             user_id=verification.user_id,
             event_type="verification_completed",
@@ -169,8 +181,7 @@ async def run_ai_verification(
     )
 
     # ── Fire event bus: verification completed ─────────────────────────────
-    from app.services.event_bus import emit_event, EVENT_VERIFICATION_COMPLETED
-    asyncio.create_task(
+    _fire_and_forget(
         _bg_emit_verification_event(verification, prop)
     )
 
@@ -190,7 +201,7 @@ def _get_badge_level(trust_score: float) -> str:
 
 async def get_verification_by_id(
     db: AsyncSession, verification_id: int
-) -> Optional[Verification]:
+) -> Verification | None:
     result = await db.execute(
         select(Verification).where(Verification.id == verification_id)
     )
@@ -236,7 +247,7 @@ async def admin_review_verification(
     verification.status = status
     verification.reviewed_by_id = reviewer_id
     verification.reviewer_notes = notes
-    verification.reviewed_at = datetime.now(timezone.utc)
+    verification.reviewed_at = datetime.now(UTC)
 
     if status == VerificationStatus.approved and verification.property_id:
         prop = await get_property_by_id(db, verification.property_id)
@@ -251,15 +262,14 @@ async def admin_review_verification(
     await cache_delete("vestra:admin:stats")
 
     # ── Fire event bus: verification completed (admin review) ──────────────
-    from app.services.event_bus import emit_event, EVENT_VERIFICATION_COMPLETED
-    asyncio.create_task(
+    _fire_and_forget(
         _bg_emit_verification_event(verification, None)
     )
 
     # ── Fire-and-forget: track verification outcome ──────────────────────
     from app.services.analytics_service import fire_and_forget_track_verification_outcome
 
-    asyncio.create_task(
+    _fire_and_forget(
         fire_and_forget_track_verification_outcome(
             verification_id=verification.id,
             ai_prediction={
@@ -304,7 +314,7 @@ async def get_monthly_verification_stats(db: AsyncSession) -> list:
     )
     data = {row.month.strftime('%b'): row.count for row in result.all()}
     month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     months = []
     for i in range(5, -1, -1):
         label = month_names[(now.month - 1 - i) % 12]
@@ -317,7 +327,7 @@ async def get_monthly_verification_stats(db: AsyncSession) -> list:
 
 async def _bg_emit_verification_event(verification, prop) -> None:
     """Fire-and-forget: emit verification.completed event."""
-    from app.services.event_bus import emit_event, EVENT_VERIFICATION_COMPLETED
+    from app.services.event_bus import EVENT_VERIFICATION_COMPLETED, emit_event
 
     try:
         prop_title = prop.title if prop and hasattr(prop, "title") else str(verification.property_id)
@@ -345,11 +355,11 @@ async def _bg_emit_verification_event(verification, prop) -> None:
 
 async def get_verification_queue(
     db: AsyncSession,
-    status_filter: Optional[str] = None,
-    city: Optional[str] = None,
-    risk_level: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    status_filter: str | None = None,
+    city: str | None = None,
+    risk_level: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 50,
 ) -> list[dict]:
     """
@@ -357,7 +367,7 @@ async def get_verification_queue(
     (riskiest first). Includes property and owner info for admin review queue.
     """
     from sqlalchemy.orm import joinedload
-    from app.models.property import Property
+
     from app.models.user import User
 
     query = (
@@ -405,7 +415,8 @@ async def get_verification_queue(
             pass
 
     if date_to:
-        from datetime import datetime as dt, timedelta
+        from datetime import datetime as dt
+        from datetime import timedelta
         try:
             parsed = dt.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
             query = query.where(Verification.created_at < parsed)
@@ -433,7 +444,7 @@ async def get_verification_queue(
             doc_result = await db.execute(
                 select(func.count(Document.id)).where(
                     Document.property_id == v.property_id,
-                    Document.is_deleted == False,
+                    not Document.is_deleted,
                 )
             )
             doc_count = doc_result.scalar_one()
@@ -490,8 +501,8 @@ async def bulk_review_verifications(
         verification.status = vs
         verification.reviewed_by_id = reviewer_id
         verification.reviewer_notes = notes
-        from datetime import datetime, timezone
-        verification.reviewed_at = datetime.now(timezone.utc)
+        from datetime import datetime
+        verification.reviewed_at = datetime.now(UTC)
 
         if vs == VerificationStatus.approved and verification.property_id:
             from app.services.property_service import get_property_by_id
@@ -508,7 +519,7 @@ async def bulk_review_verifications(
         await cache_delete("vestra:admin:stats")
 
         # Track analytics
-        asyncio.create_task(
+        _fire_and_forget(
             fire_and_forget_track_verification_outcome(
                 verification_id=verification.id,
                 ai_prediction={
@@ -522,8 +533,7 @@ async def bulk_review_verifications(
         )
 
         # Emit event
-        from app.services.event_bus import emit_event, EVENT_VERIFICATION_COMPLETED
-        asyncio.create_task(
+        _fire_and_forget(
             _bg_emit_verification_event(verification, None)
         )
 
@@ -546,9 +556,9 @@ async def get_verification_admin_stats(
     - average_review_time: avg hours between created_at and reviewed_at
     - approval_rate: % of non-pending that are approved
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # Total pending

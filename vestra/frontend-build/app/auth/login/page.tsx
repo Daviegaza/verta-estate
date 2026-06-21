@@ -228,7 +228,7 @@ export default function LoginPage() {
               {step !== 'name' && (
                 <div className="mt-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-3">
                   <ShieldCheck className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-emerald-800">Fast login — no password needed. We'll send you a code via WhatsApp.</p>
+                  <p className="text-xs text-emerald-800">Fast login — no password needed. We&apos;ll send you a code via WhatsApp.</p>
                 </div>
               )}
             </>
@@ -315,7 +315,7 @@ export default function LoginPage() {
           </div>
           <h2 className="text-3xl font-bold text-white mb-4">Trust Every Property</h2>
           <p className="text-emerald-100 text-lg leading-relaxed">
-            Browse verified properties across Kenya. Every listing has a Trust Score so you know exactly what you're getting.
+            Browse verified properties across Kenya. Every listing has a Trust Score so you know exactly what you&apos;re getting.
           </p>
           <div className="mt-10 grid grid-cols-3 gap-4 text-center">
             {[

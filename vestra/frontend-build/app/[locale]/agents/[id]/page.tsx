@@ -83,14 +83,21 @@ export default function AgentProfilePage() {
   const [recentListings, setRecentListings] = useState<RecentListing[]>([]);
   const [listingsLoading, setListingsLoading] = useState(false);
 
-  useEffect(() => {
-    if (agentId) {
-      loadAgent();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId]);
-
   // ── Data fetching ──────────────────────────────────────────────────────
+
+  const loadRecentListings = async (userId: number) => {
+    setListingsLoading(true);
+    try {
+      const res = await api.client.get('/api/properties', {
+        params: { owner_id: userId, limit: 6 },
+      });
+      setRecentListings(res.data.items || []);
+    } catch (err) {
+      console.error('Failed to load listings:', err);
+    } finally {
+      setListingsLoading(false);
+    }
+  };
 
   const loadAgent = async () => {
     setLoading(true);
@@ -120,19 +127,12 @@ export default function AgentProfilePage() {
     }
   };
 
-  const loadRecentListings = async (userId: number) => {
-    setListingsLoading(true);
-    try {
-      const res = await api.client.get('/api/properties', {
-        params: { owner_id: userId, limit: 6 },
-      });
-      setRecentListings(res.data.items || []);
-    } catch (err) {
-      console.error('Failed to load listings:', err);
-    } finally {
-      setListingsLoading(false);
+  useEffect(() => {
+    if (agentId) {
+      loadAgent();
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId]);
 
   // ── Derived values ─────────────────────────────────────────────────────
 

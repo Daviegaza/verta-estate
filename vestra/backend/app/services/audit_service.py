@@ -5,25 +5,27 @@ Used across the app to maintain a complete audit trail.
 from __future__ import annotations
 
 import logging
-from typing import Optional, Any
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import TYPE_CHECKING
 
 from app.models.audit_log import AuditLog
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
 
 async def log_action(
     db: AsyncSession,
-    user_id: Optional[int],
+    user_id: int | None,
     action: str,
     resource_type: str,
-    resource_id: Optional[int] = None,
-    details: Optional[dict] = None,
-    ip_address: Optional[str] = None,
-    user_agent: Optional[str] = None,
-    correlation_id: Optional[str] = None,
-) -> Optional[AuditLog]:
+    resource_id: int | None = None,
+    details: dict | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+    correlation_id: str | None = None,
+) -> AuditLog | None:
     """Record an auditable action. Best-effort — never raises."""
     try:
         entry = AuditLog(

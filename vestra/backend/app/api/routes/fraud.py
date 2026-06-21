@@ -1,13 +1,17 @@
 """Fraud reporting and blacklist API routes."""
-from fastapi import APIRouter, Depends, HTTPException, Query
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
-from app.services.fraud_service import (
-    report_fraud, check_blacklist, admin_review_fraud, get_pending_fraud_reports,
-)
+from app.core.security import get_current_admin, get_current_user
 from app.models.trust_safety import FraudReportStatus
+from app.services.fraud_service import (
+    admin_review_fraud,
+    check_blacklist,
+    get_pending_fraud_reports,
+    report_fraud,
+)
 
 router = APIRouter(prefix="/fraud", tags=["Fraud"])
 
@@ -15,11 +19,11 @@ router = APIRouter(prefix="/fraud", tags=["Fraud"])
 @router.post("/report")
 async def report_fraud_endpoint(
     description: str,
-    reported_phone: Optional[str] = None,
-    reported_email: Optional[str] = None,
-    reported_title_deed: Optional[str] = None,
-    reported_name: Optional[str] = None,
-    evidence_urls: Optional[str] = None,  # Comma-separated URLs
+    reported_phone: str | None = None,
+    reported_email: str | None = None,
+    reported_title_deed: str | None = None,
+    reported_name: str | None = None,
+    evidence_urls: str | None = None,  # Comma-separated URLs
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -44,10 +48,10 @@ async def report_fraud_endpoint(
 
 @router.get("/check")
 async def check_fraud_endpoint(
-    phone: Optional[str] = None,
-    email: Optional[str] = None,
-    title_deed: Optional[str] = None,
-    name: Optional[str] = None,
+    phone: str | None = None,
+    email: str | None = None,
+    title_deed: str | None = None,
+    name: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -87,7 +91,7 @@ async def admin_pending_fraud(
 async def admin_review_fraud_endpoint(
     report_id: int,
     status: FraudReportStatus,
-    notes: Optional[str] = None,
+    notes: str | None = None,
     current_user=Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):

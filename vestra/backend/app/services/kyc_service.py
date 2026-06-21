@@ -3,13 +3,18 @@ KYC Service — identity verification workflow for agents, landlords, and users.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
-from app.models.kyc_notification import KYCVerification, KYCStatus
+from sqlalchemy import func, select
+
+from app.models.kyc_notification import KYCStatus, KYCVerification
+from app.services.analytics_service import fire_and_forget_track_user_event
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -21,9 +26,9 @@ async def submit_kyc(
     user_id: int,
     id_type: str,
     id_number: str,
-    id_front_url: Optional[str] = None,
-    id_back_url: Optional[str] = None,
-    selfie_url: Optional[str] = None,
+    id_front_url: str | None = None,
+    id_back_url: str | None = None,
+    selfie_url: str | None = None,
 ) -> KYCVerification:
     """Submit a KYC verification request."""
     # Check if user already has a pending/reviewing KYC
@@ -52,9 +57,7 @@ async def submit_kyc(
     logger.info('{"event":"kyc_submitted","user_id":%d,"id_type":"%s"}', user_id, id_type)
 
     # ── Fire analytics event: kyc_submitted ────────────────────────────────
-    from app.services.analytics_service import fire_and_forget_track_user_event
-    import asyncio
-    asyncio.create_task(
+    _task_kyc_submit = asyncio.create_task(  # noqa: RUF006
         fire_and_forget_track_user_event(
             user_id=user_id,
             event_type="kyc_submitted",
@@ -65,7 +68,7 @@ async def submit_kyc(
     return kyc
 
 
-async def get_kyc_status(db: AsyncSession, user_id: int) -> Optional[KYCVerification]:
+async def get_kyc_status(db: AsyncSession, user_id: int) -> KYCVerification | None:
     """Get the latest KYC verification for a user."""
     result = await db.execute(
         select(KYCVerification)
@@ -81,8 +84,8 @@ async def admin_review_kyc(
     kyc_id: int,
     reviewer_id: int,
     status: KYCStatus,
-    rejection_reason: Optional[str] = None,
-) -> Optional[KYCVerification]:
+    rejection_reason: str | None = None,
+) -> KYCVerification | None:
     """Admin reviews a KYC submission."""
     result = await db.execute(
         select(KYCVerification).where(KYCVerification.id == kyc_id)
@@ -93,11 +96,11 @@ async def admin_review_kyc(
 
     kyc.status = status
     kyc.reviewer_id = reviewer_id
-    kyc.reviewed_at = datetime.now(timezone.utc)
+    kyc.reviewed_at = datetime.now(UTC)
     if rejection_reason:
         kyc.rejection_reason = rejection_reason
     if status == KYCStatus.approved:
-        kyc.expires_at = datetime.now(timezone.utc) + timedelta(days=KYC_EXPIRY_DAYS)
+        kyc.expires_at = datetime.now(UTC) + timedelta(days=KYC_EXPIRY_DAYS)
 
     await db.commit()
     await db.refresh(kyc)
@@ -119,9 +122,7 @@ async def admin_review_kyc(
 
     # ── Fire analytics event on approval ──────────────────────────────────
     if status == KYCStatus.approved:
-        from app.services.analytics_service import fire_and_forget_track_user_event
-        import asyncio
-        asyncio.create_task(
+        _task_kyc_approve = asyncio.create_task(  # noqa: RUF006
             fire_and_forget_track_user_event(
                 user_id=kyc.user_id,
                 event_type="kyc_approved",
@@ -158,7 +159,7 @@ async def batch_review_kyc(
     kyc_ids: list[int],
     reviewer_id: int,
     status: KYCStatus,
-    rejection_reason: Optional[str] = None,
+    rejection_reason: str | None = None,
 ) -> dict:
     """
     Batch review multiple KYC submissions at once.

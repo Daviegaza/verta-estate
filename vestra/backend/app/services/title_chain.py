@@ -15,16 +15,17 @@ TitleChain makes every property's history immutable and publicly verifiable.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.redis import cache_get, cache_set
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -80,7 +81,7 @@ class TitleChain:
         """Create the first block in a property's title chain — the original registration."""
         block = TitleBlock(
             block_index=0,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             event_type="registration",
             property_id=property_id,
             data={
@@ -111,7 +112,7 @@ class TitleChain:
 
         block = TitleBlock(
             block_index=last_block.block_index + 1,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             event_type=event_type,
             property_id=property_id,
             data=data,
@@ -189,54 +190,12 @@ class TitleChain:
             for b in blocks
         ]
 
-    async def get_latest_block(self, db: AsyncSession, property_id: int) -> Optional[TitleBlock]:
+    async def get_latest_block(self, db: AsyncSession, property_id: int) -> TitleBlock | None:
         """Get the latest block in the chain."""
         blocks = await self._load_chain(db, property_id)
         return blocks[-1] if blocks else None
 
     # ── Convenience Methods (public API) ─────────────────────────────────────────
-
-    async def create_genesis_block(
-        self, db: AsyncSession, *,
-        property_id: int,
-        owner_name: str,
-        title_number: str,
-        land_reference: str,
-        county: str,
-        size_sqft: float,
-        created_by_id: int,
-    ) -> TitleBlock:
-        """
-        Create the genesis (first) block in the title chain for a property.
-        Records original registration with all ownership details.
-        """
-        block = TitleBlock(
-            block_index=0,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            event_type="registration",
-            property_id=property_id,
-            data={
-                "owner_name": owner_name,
-                "title_number": title_number,
-                "land_reference": land_reference,
-                "county": county,
-                "size_sqft": size_sqft,
-                "created_by_id": created_by_id,
-                "chain_id": (
-                    f"VTC-{property_id}-"
-                    f"{hashlib.sha256(str(property_id).encode()).hexdigest()[:12]}"
-                ),
-            },
-            previous_hash=self.GENESIS_HASH,
-            validator="LAND_REGISTRY",
-        )
-        block.hash = block.compute_hash()
-        await self._save_block(db, block)
-        logger.info(
-            '{"event":"title_chain_genesis","property_id":%d,"chain_id":"%s"}',
-            property_id, block.data.get("chain_id"),
-        )
-        return block
 
     async def append_block(
         self, db: AsyncSession, *,
@@ -245,7 +204,7 @@ class TitleChain:
         transaction_type: str,
         transaction_amount: float,
         created_by_id: int,
-        document_hash: Optional[str] = None,
+        document_hash: str | None = None,
     ) -> TitleBlock:
         """
         Append a new block to the property's title chain.
@@ -266,7 +225,7 @@ class TitleChain:
 
         block = TitleBlock(
             block_index=last_block.block_index + 1,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             event_type=transaction_type,
             property_id=property_id,
             data=data,

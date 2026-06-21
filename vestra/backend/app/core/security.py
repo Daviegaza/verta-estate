@@ -6,16 +6,18 @@ Impossible to bypass — every admin action is server-verified.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
-from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status, Request
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
+
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.ext.asyncio import AsyncSession
+from jose import JWTError, jwt
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.hashing import verify_password, get_password_hash  # async, non-blocking
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # ── Password Hashing ──────────────────────────────────────────────────────────
 
@@ -52,20 +54,20 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
 
 def create_access_token(
     data: dict,
-    expires_delta: Optional[timedelta] = None,
-    client_ip: Optional[str] = None,
+    expires_delta: timedelta | None = None,
+    client_ip: str | None = None,
 ) -> str:
     """
     Create a JWT access token with optional IP binding.
     Tokens are tied to the IP address they were issued to — prevents token theft.
     """
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode.update({
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
         "type": "access",
     })
     # IP binding: token only valid from the IP it was issued to
@@ -77,8 +79,8 @@ def create_access_token(
 
 def create_refresh_token(
     data: dict,
-    expires_delta: Optional[timedelta] = None,
-    client_ip: Optional[str] = None,
+    expires_delta: timedelta | None = None,
+    client_ip: str | None = None,
 ) -> tuple[str, str]:
     """
     Create a refresh token JWT with a unique jti (JWT ID) for individual revocation.
@@ -86,12 +88,12 @@ def create_refresh_token(
     """
     to_encode = data.copy()
     jti = str(uuid.uuid4())
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     )
     to_encode.update({
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
         "type": "refresh",
         "jti": jti,
     })
@@ -111,7 +113,7 @@ def decode_token(token: str) -> dict:
             options={"verify_exp": True},
         )
         return payload
-    except JWTError as e:
+    except JWTError as err:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
@@ -119,7 +121,7 @@ def decode_token(token: str) -> dict:
                 "message": "Your session is invalid or expired. Please log in again.",
             },
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from err
 
 
 # ── Auth Dependencies ─────────────────────────────────────────────────────────
@@ -152,8 +154,8 @@ async def get_current_user(
         token_type: str = payload.get("type", "")
         if user_id is None or token_type != "access":
             raise credentials_exception
-    except JWTError:
-        raise credentials_exception
+    except JWTError as err:
+        raise credentials_exception from err
 
     # IP binding check (prevents token theft)
     token_ip = payload.get("ip")

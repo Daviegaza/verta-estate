@@ -1,3 +1,3 @@
-from app.ai.engine import vestra_ai, VestraAI
+from app.ai.engine import VestraAI, vestra_ai
 
-__all__ = ["vestra_ai", "VestraAI"]
+__all__ = ["VestraAI", "vestra_ai"]

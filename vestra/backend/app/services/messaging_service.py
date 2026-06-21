@@ -4,11 +4,14 @@ Messaging Service — buyer-seller-agent communication within the platform.
 from __future__ import annotations
 
 import logging
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_, update
+from typing import TYPE_CHECKING
+
+from sqlalchemy import and_, func, or_, select
 
 from app.models.kyc_notification import Message
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -18,8 +21,8 @@ async def send_message(
     sender_id: int,
     receiver_id: int,
     body: str,
-    property_id: Optional[int] = None,
-    subject: Optional[str] = None,
+    property_id: int | None = None,
+    subject: str | None = None,
 ) -> Message:
     """Send a message from one user to another and push it via WebSocket."""
     message = Message(
@@ -70,7 +73,7 @@ async def get_conversation(
     db: AsyncSession,
     user_id: int,
     other_user_id: int,
-    property_id: Optional[int] = None,
+    property_id: int | None = None,
     limit: int = 50,
 ) -> list[Message]:
     """Get messages between two users, newest first."""
@@ -107,8 +110,8 @@ async def get_inbox(
         .where(Message.receiver_id == user_id)
     )
     # Get most recent message per conversation
-    from sqlalchemy import union_all, text
-    all_msgs = union_all(sent, received).alias("all_msgs")
+    from sqlalchemy import union_all
+    union_all(sent, received).alias("all_msgs")
 
     result = await db.execute(
         select(Message)
@@ -146,7 +149,7 @@ async def get_inbox(
 
 async def mark_message_read(
     db: AsyncSession, message_id: int, user_id: int
-) -> Optional[Message]:
+) -> Message | None:
     """Mark a message as read (only by the receiver)."""
     result = await db.execute(
         select(Message).where(
@@ -167,7 +170,7 @@ async def count_unread_messages(db: AsyncSession, user_id: int) -> int:
     result = await db.execute(
         select(func.count(Message.id)).where(
             Message.receiver_id == user_id,
-            Message.is_read == False,
+            not Message.is_read,
         )
     )
     return result.scalar_one()

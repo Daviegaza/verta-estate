@@ -5,6 +5,7 @@ These models build the trust infrastructure that makes VESTRA defensible.
 import enum
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     Column,
@@ -13,7 +14,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    JSON,
     Numeric,
     String,
     Text,
@@ -57,7 +57,7 @@ class Review(Base):
     )
 
 
-class EscrowStatus(str, enum.Enum):
+class EscrowStatus(enum.StrEnum):
     initiated = "initiated"
     deposit_paid = "deposit_paid"
     balance_paid = "balance_paid"
@@ -108,7 +108,7 @@ class EscrowTransaction(Base):
     )
 
 
-class DisputeStatus(str, enum.Enum):
+class DisputeStatus(enum.StrEnum):
     open = "open"
     investigating = "investigating"
     resolved = "resolved"
@@ -145,7 +145,7 @@ class Dispute(Base):
     )
 
 
-class FraudReportStatus(str, enum.Enum):
+class FraudReportStatus(enum.StrEnum):
     pending = "pending"
     investigating = "investigating"
     confirmed = "confirmed"

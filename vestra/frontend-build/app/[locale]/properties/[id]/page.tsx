@@ -49,11 +49,6 @@ export default function PropertyDetailPage() {
   const [showContact, setShowContact] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!propertyId || isNaN(propertyId)) { router.push('/market'); return; }
-    loadData();
-  }, [propertyId]);
-
   const loadData = async () => {
     setLoading(true);
     try {
@@ -79,6 +74,11 @@ export default function PropertyDetailPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!propertyId || isNaN(propertyId)) { router.push('/market'); return; }
+    loadData();
+  }, [propertyId]);
 
   const handleVerifyNow = async () => {
     if (!isHydrated) return;
@@ -372,7 +372,7 @@ export default function PropertyDetailPage() {
                   <div>
                     <h3 className="font-semibold text-gray-900">Not Yet Verified</h3>
                     <p className="text-sm text-gray-500 mt-1">
-                      This property hasn't been verified. Get an AI trust report to confirm ownership and detect fraud.
+                      This property hasn&apos;t been verified. Get an AI trust report to confirm ownership and detect fraud.
                     </p>
                   </div>
                 </div>
@@ -405,7 +405,7 @@ export default function PropertyDetailPage() {
                   </div>
                 </div>
                 <p className="text-sm text-emerald-700">
-                  This property has passed Vestra's AI verification. Ownership, documents, and pricing have been checked.
+                  This property has passed Vestra&apos;s AI verification. Ownership, documents, and pricing have been checked.
                 </p>
               </div>
             )}

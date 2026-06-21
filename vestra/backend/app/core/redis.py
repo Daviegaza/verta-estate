@@ -4,23 +4,34 @@ Provides connection pooling, cache decorators, and rate limiting.
 """
 from __future__ import annotations
 
-import json
-import hashlib
 import asyncio
+import hashlib
+import json
+import logging
+import threading
+import time as _time
+from collections import defaultdict
+from contextlib import suppress
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any
 
 import redis.asyncio as aioredis
+
 from app.core.config import settings
+
+logger = logging.getLogger("vestra.redis")
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # ── Connection Pool ────────────────────────────────────────────────────────────
 
-_redis_pool: Optional[aioredis.ConnectionPool] = None
-_redis: Optional[aioredis.Redis] = None
+_redis_pool: aioredis.ConnectionPool | None = None
+_redis: aioredis.Redis | None = None
 _redis_unavailable: bool = False  # Fast-fail flag when Redis is down
 
 
-async def get_redis() -> Optional[aioredis.Redis]:
+async def get_redis() -> aioredis.Redis | None:
     """
     Return a shared Redis connection (creates the pool on first call).
     Returns None if Redis is unavailable (fast-fail after first failed attempt).
@@ -67,7 +78,7 @@ def _make_cache_key(prefix: str, *args, **kwargs) -> str:
     return f"vestra:cache:{prefix}:{digest}"
 
 
-async def cache_get(key: str) -> Optional[Any]:
+async def cache_get(key: str) -> Any | None:
     """Get a value from the cache (JSON deserialised). Returns None on miss or error."""
     r = await get_redis()
     if r is None:
@@ -84,10 +95,8 @@ async def cache_set(key: str, value: Any, ttl: int = 300) -> None:
     r = await get_redis()
     if r is None:
         return
-    try:
+    with suppress(Exception):
         await r.setex(key, ttl, json.dumps(value, default=str))
-    except Exception:
-        pass  # cache is best-effort
 
 
 async def cache_delete(pattern: str) -> None:
@@ -131,10 +140,6 @@ def cached(prefix: str, ttl: int = 300):
 
 # ── Rate Limiter (Redis sliding-window + in-memory fallback) ────────────────────
 
-import time as _time
-from collections import defaultdict
-import threading
-
 
 class InMemoryRateLimiter:
     """
@@ -143,7 +148,7 @@ class InMemoryRateLimiter:
     doesn't silently disappear.
 
     Not distributed — each worker maintains its own counters, so the
-    effective limit is (N_workers × max_requests) during a Redis outage.
+    effective limit is (N_workers x max_requests) during a Redis outage.
     That's acceptable: degraded protection is vastly better than none.
     """
 
@@ -180,7 +185,7 @@ class InMemoryRateLimiter:
             return max(0, self.max_requests - len(bucket))
 
     def cleanup(self) -> None:
-        """Remove stale buckets older than 2× window to prevent memory leaks."""
+        """Remove stale buckets older than 2x window to prevent memory leaks."""
         cutoff = _time.monotonic() - (2 * self.window)
         with self._lock:
             stale = [k for k, v in self._buckets.items() if not v or v[-1] < cutoff]

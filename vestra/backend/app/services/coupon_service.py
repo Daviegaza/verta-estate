@@ -6,12 +6,15 @@ from __future__ import annotations
 
 import logging
 import secrets
-from datetime import datetime, timezone
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import select
 
 from app.models.enterprise import Coupon, DiscountType
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -22,9 +25,9 @@ async def create_coupon(
     discount_type: str,
     discount_value: float,
     max_uses: int = 100,
-    min_subscription_tier: Optional[str] = None,
-    expires_at: Optional[datetime] = None,
-    description: Optional[str] = None,
+    min_subscription_tier: str | None = None,
+    expires_at: datetime | None = None,
+    description: str | None = None,
 ) -> Coupon:
     """Create a new discount coupon."""
     # Validate discount type and value
@@ -44,7 +47,7 @@ async def create_coupon(
         min_subscription_tier=min_subscription_tier,
         expires_at=expires_at,
         description=description,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     db.add(coupon)
     await db.commit()
@@ -84,7 +87,7 @@ async def generate_bulk_coupons(
 
 
 async def validate_coupon(
-    db: AsyncSession, code: str, user_id: Optional[int] = None,
+    db: AsyncSession, code: str, user_id: int | None = None,
 ) -> dict:
     """
     Validate a coupon code. Returns discount info or error.
@@ -104,7 +107,7 @@ async def validate_coupon(
     if coupon.times_used >= coupon.max_uses:
         return {"valid": False, "error": "This coupon has reached its usage limit"}
 
-    if coupon.expires_at and coupon.expires_at < datetime.now(timezone.utc):
+    if coupon.expires_at and coupon.expires_at < datetime.now(UTC):
         return {"valid": False, "error": "This coupon has expired"}
 
     return {
@@ -167,7 +170,7 @@ async def apply_coupon(
 
 async def deactivate_coupon(
     db: AsyncSession, code: str,
-) -> Optional[Coupon]:
+) -> Coupon | None:
     """Deactivate a coupon code."""
     result = await db.execute(
         select(Coupon).where(Coupon.code == code.upper().strip())
@@ -190,7 +193,7 @@ async def list_active_coupons(
     """List all active coupons (admin)."""
     result = await db.execute(
         select(Coupon)
-        .where(Coupon.is_active == True)
+        .where(Coupon.is_active)
         .order_by(Coupon.created_at.desc())
         .limit(limit)
     )

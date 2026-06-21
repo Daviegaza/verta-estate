@@ -5,11 +5,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
+from app.core.security import get_current_admin, get_current_user
 from app.services.escrow_service import (
-    create_escrow, deposit_paid, balance_paid,
-    release_escrow, cancel_escrow, dispute_escrow,
-    get_escrow_by_id, get_user_escrows, get_pending_escrows, get_escrow_stats,
+    balance_paid,
+    cancel_escrow,
+    create_escrow,
+    deposit_paid,
+    dispute_escrow,
+    get_escrow_by_id,
+    get_escrow_stats,
+    get_pending_escrows,
+    get_user_escrows,
+    release_escrow,
 )
 
 router = APIRouter(prefix="/escrow", tags=["Escrow"])
@@ -45,7 +52,7 @@ async def create_new_escrow(
             "message": "Escrow created. Deposit payment is now required.",
         }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/my")
@@ -112,7 +119,7 @@ async def release_escrow_funds(
             raise HTTPException(status_code=404, detail="Escrow not found")
         return {"message": "Escrow released to seller", "status": escrow.status.value}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/{escrow_id}/cancel")
@@ -129,7 +136,7 @@ async def cancel_escrow_transaction(
             raise HTTPException(status_code=404, detail="Escrow not found")
         return {"message": "Escrow cancelled", "status": escrow.status.value}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/{escrow_id}/dispute")

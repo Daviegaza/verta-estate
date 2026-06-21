@@ -88,7 +88,9 @@ function PropertyCard({ property, className, isFavorited = false }: PropertyCard
   );
   const mainImage = property.images?.[0] || placeholderGradient;
 
-  const isNew = property.created_at && (Date.now() - new Date(property.created_at).getTime() < 7 * 24 * 60 * 60 * 1000);
+  // eslint-disable-next-line react-hooks/purity -- Snapshot current time for "new" badge calculation
+  const now = Date.now();
+  const isNew = property.created_at && (now - new Date(property.created_at).getTime() < 7 * 24 * 60 * 60 * 1000);
 
   return (
     <Link

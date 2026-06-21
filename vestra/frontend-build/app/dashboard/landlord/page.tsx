@@ -91,8 +91,6 @@ function LandlordContent() {
   const [error, setError] = useState('');
   const [activeBuilding, setActiveBuilding] = useState<string | null>(null);
 
-  useEffect(() => { loadData(); }, []);
-
   const loadData = async () => {
     setLoading(true); setError('');
     try {
@@ -114,6 +112,8 @@ function LandlordContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => { loadData(); }, []);
 
   const handleCollectRent = async (tenantId: number) => {
     setCollectingId(tenantId);

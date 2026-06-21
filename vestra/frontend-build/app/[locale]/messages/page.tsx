@@ -65,6 +65,18 @@ function MessagesContent() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  const loadInbox = async () => {
+    try {
+      const res = await api.client.get('/api/messages/inbox');
+      setConversations(res.data.conversations || []);
+      setUnreadCount(res.data.unread_count || 0);
+    } catch (err) {
+      console.error('Failed to load inbox:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ── WebSocket subscriptions ──────────────────────────────────────────────
   useEffect(() => {
     // Real-time new messages
@@ -144,18 +156,6 @@ function MessagesContent() {
     }, 30000);
     return () => clearInterval(interval);
   }, [activeConv, requestOnlineStatus]);
-
-  const loadInbox = async () => {
-    try {
-      const res = await api.client.get('/api/messages/inbox');
-      setConversations(res.data.conversations || []);
-      setUnreadCount(res.data.unread_count || 0);
-    } catch (err) {
-      console.error('Failed to load inbox:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     loadInbox();

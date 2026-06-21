@@ -5,10 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
+from app.core.security import get_current_admin, get_current_user
 from app.services.payout_service import (
-    create_payout, process_payout, complete_payout, fail_payout,
-    get_user_payouts, get_pending_payouts, get_payout_stats,
+    complete_payout,
+    create_payout,
+    fail_payout,
+    get_payout_stats,
+    get_pending_payouts,
+    get_user_payouts,
+    process_payout,
 )
 
 router = APIRouter(prefix="/payouts", tags=["Payouts"])

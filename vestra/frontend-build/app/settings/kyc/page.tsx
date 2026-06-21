@@ -45,10 +45,6 @@ function KYCContent() {
   const backRef = useRef<HTMLInputElement>(null);
   const selfieRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    loadKYCStatus();
-  }, []);
-
   const loadKYCStatus = async () => {
     setError('');
     try {
@@ -69,6 +65,10 @@ function KYCContent() {
       setFormState('not_submitted');
     }
   };
+
+  useEffect(() => {
+    loadKYCStatus();
+  }, []);
 
   const handleFileDrop = useCallback((e: React.DragEvent, setter: (f: File) => void) => {
     e.preventDefault();

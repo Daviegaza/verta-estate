@@ -1,32 +1,213 @@
-# Fly.io Deployment Configuration
-# Deploy: fly deploy --config fly.toml
+# ═══════════════════════════════════════════════════════════════════════════════
+# VESTRA — Fly.io Production Deployment Configuration
+# AI-Powered Property Trust & Operating System for Africa
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Primary deployment target: Fly.io (Nairobi region for Kenyan users)
+# Deploy: fly launch --config fly.toml
+# Deploy existing: fly deploy --config fly.toml
+# ═══════════════════════════════════════════════════════════════════════════════
 
 app = "vestra-api"
-primary_region = "nbo"  # Nairobi (closest to Kenyan users)
 
+# ── Primary Region ─────────────────────────────────────────────────────────────
+# Nairobi (nbo) is closest to our primary user base in Kenya.
+# Additional regions can be added with fly regions add <code>:
+#   - cdg (Paris)     — European users
+#   - lhr (London)    — UK users
+#   - jnb (Johannesburg) — Southern Africa
+#   - ewr (Newark)    — US East Coast
+primary_region = "nbo"
+
+# ── Build Configuration ────────────────────────────────────────────────────────
 [build]
   dockerfile = "backend/Dockerfile"
+  # Builder arguments for multi-stage builds
+  args = {
+    APP_VERSION = "4.0.0"
+    BUILD_DATE = "{{ .Timestamp }}"  # Injected by Fly.io at deploy time
+  }
 
+# ── Environment Variables ─────────────────────────────────────────────────────
+# Secrets are managed via `fly secrets set` (encrypted at rest).
+# Only non-sensitive defaults are listed here.
 [env]
+  # Core
   ENVIRONMENT = "production"
   DEBUG = "false"
-  DATABASE_POOL_SIZE = "30"
-  GUNICORN_WORKERS = "4"
+  APP_NAME = "Vestra"
+  APP_VERSION = "4.0.0"
 
+  # Database connection pool: tuned for 2 CPU, 1GB RAM VM
+  DATABASE_POOL_SIZE = "20"
+  DATABASE_MAX_OVERFLOW = "40"
+  DATABASE_POOL_RECYCLE = "3600"
+
+  # Gunicorn: 2 workers + 1 = 3 workers (2*cpu + 1 formula)
+  GUNICORN_WORKERS = "3"
+  GUNICORN_BACKLOG = "2048"
+  GUNICORN_WORKER_CONNECTIONS = "1000"
+  GUNICORN_MAX_REQUESTS = "10000"
+  GUNICORN_MAX_REQUESTS_JITTER = "1000"
+  GUNICORN_TIMEOUT = "30"
+  GUNICORN_GRACEFUL_TIMEOUT = "10"
+  GUNICORN_KEEPALIVE = "5"
+  GUNICORN_LOG_LEVEL = "warning"
+
+  # Auth defaults
+  ACCESS_TOKEN_EXPIRE_MINUTES = "60"
+  REFRESH_TOKEN_EXPIRE_DAYS = "7"
+  ALGORITHM = "HS256"
+
+  # Security
+  CSP_ENABLED = "true"
+  CSRF_ENABLED = "true"
+  SESSION_IDLE_TIMEOUT_MINUTES = "30"
+  MAX_CONCURRENT_SESSIONS = "5"
+  ACCOUNT_LOCKOUT_MAX_ATTEMPTS = "5"
+  ACCOUNT_LOCKOUT_DURATION_MINUTES = "15"
+
+  # Rate Limiting
+  RATE_LIMIT_AUTH_PER_MINUTE = "10"
+  RATE_LIMIT_GENERAL_PER_MINUTE = "120"
+  RATE_LIMIT_ADMIN_PER_MINUTE = "300"
+
+  # Monitoring
+  PROMETHEUS_ENABLED = "true"
+  SENTRY_TRACES_SAMPLE_RATE = "0.1"
+
+  # M-Pesa defaults (secrets managed separately)
+  MPESA_ENV = "production"
+  MPESA_SHORTCODE = "174379"
+
+  # Email defaults
+  SMTP_PORT = "587"
+  SMTP_FROM_EMAIL = "noreply@vestra.co.ke"
+  SMTP_FROM_NAME = "Vestra"
+
+  # Uploads
+  MAX_FILE_SIZE = "10485760"
+
+  # Workers
+  WORKERS = "4"
+  BATCH_SIZE = "5"
+
+  # CORS — comma-separated list of allowed origins
+  CORS_ORIGINS = "https://vestra.co.ke,https://app.vestra.co.ke,https://www.vestra.co.ke"
+
+  # Payment callback URLs
+  MPESA_CALLBACK_URL = "https://vestra.co.ke/api/payments/mpesa/callback"
+  AIRTEL_CALLBACK_URL = "https://vestra.co.ke/api/payments/airtel/callback"
+
+# ── HTTP Service ───────────────────────────────────────────────────────────────
 [http_service]
-  internal_port = 8000
-  force_https = true
+  internal_port = 8000                    # Gunicorn/FastAPI port
+  force_https = true                      # Auto-redirect HTTP to HTTPS
+  auto_stop_machines = true               # Scale to zero when idle (cost savings)
+  auto_start_machines = true              # Wake on request
+  min_machines_running = 1                # Always keep at least 1 warm
+  max_machines_running = 10               # Auto-scale ceiling (up to 10 during load)
+
+  # ── HTTP Health Checks ──────────────────────────────────────────────────────
+  # Primary health check — lightweight endpoint for routing decisions
+  [[http_service.checks]]
+    interval = "15s"                       # Check every 15 seconds
+    timeout = "5s"                         # Fail after 5 seconds
+    method = "get"
+    path = "/health"
+    protocol = "http"
+
+    # Grace period before health check begins
+    # Increased from default to account for DB migrations & cold starts
+    grace_period = "30s"
+
+    # Restart if 3 consecutive health checks fail
+    failure_count = 3
+
+  # ── Readiness Probe ─────────────────────────────────────────────────────────
+  # Separate endpoint that confirms the app can serve traffic
+  # (including DB connectivity, Redis connectivity)
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "10s"
+    method = "get"
+    path = "/health/ready"                 # Should check all downstream services
+    protocol = "http"
+    grace_period = "45s"
+    failure_count = 3
+
+# ── TCP Services ──────────────────────────────────────────────────────────────
+# TCP health checks for internal services that don't speak HTTP.
+# Fly.io uses these to determine instance health for load balancing.
+
+# PostgreSQL connectivity check (via internal WireGuard network)
+[[services]]
+  protocol = "tcp"
+  internal_port = 5432
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 1
 
-  [[http_service.checks]]
+  [[services.ports]]
+    port = 5432
+    handlers = ["tls"]
+    # Only allow connections from other Fly apps on the same network
+    # e.g., `fly postgres attach` creates a private network
+
+  [[services.tcp_checks]]
     interval = "15s"
     timeout = "5s"
-    method = "get"
-    path = "/health"
+    grace_period = "60s"                   # PostgreSQL can take time to start
+    restart_limit = 3
 
+# ── Release Command ───────────────────────────────────────────────────────────
+# Runs database migrations before each deployment.
+# This runs in a one-off VM BEFORE the new version starts accepting traffic.
+# If the release command fails, Fly.io rolls back the deployment.
+[release_command]
+  process_group = "app"
+  command = "alembic upgrade head"
+  # Optional: add seed data command that runs ONLY on fresh deployments
+  # pre_command = "echo 'Running migrations...'"
+
+# ── Deployment Strategy ───────────────────────────────────────────────────────
+# Rolling deploys with increased max surge for faster rollouts
+[http_service.deployment]
+  strategy = "rolling"
+  max_surge = "50%"                        # Allow 50% more instances during deploy
+  max_unavailable = "0"                    # Zero-downtime deploys
+
+# ── VM Configuration ──────────────────────────────────────────────────────────
 [[vm]]
   memory = "1gb"
   cpu_kind = "shared"
   cpus = 2
+
+  # Auto-scaling memory based on demand (if supported by region)
+  # memory_mb = "2048"  # Uncomment to double memory during peak
+
+# ── Metrics (Fly.io Grafana integration) ──────────────────────────────────────
+[metrics]
+  port = 9091                              # Prometheus metrics export port
+  path = "/metrics"                        # App metrics endpoint
+
+# ── Static IP Configuration ───────────────────────────────────────────────────
+# Allocate with: `fly ips allocate-v4` and `fly ips allocate-v6`
+# ──
+# fly ips allocate-v4 --shared  (shared IPv4, free)
+# fly ips allocate-v4          (dedicated IPv4, $2/mo)
+
+# ── Proxy Protocol (optional) ─────────────────────────────────────────────────
+# Enable if behind a load balancer that uses Proxy Protocol
+# [http_service.proxy_protocol]
+#   enabled = false
+
+# ── Extra configuration snippets ──────────────────────────────────────────────
+# Custom response headers (security)
+# [[http_service.response]]
+#   headers = {
+#     "X-Frame-Options" = "DENY",
+#     "X-Content-Type-Options" = "nosniff",
+#     "Referrer-Policy" = "strict-origin-when-cross-origin",
+#     "Permissions-Policy" = "camera=(), microphone=(), geolocation=()"
+#   }

@@ -5,11 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
+from app.core.security import get_current_admin, get_current_user
 from app.services.dispute_service import (
-    create_dispute, get_dispute_by_id, get_user_disputes,
-    get_all_disputes, assign_dispute, resolve_dispute, get_dispute_stats,
     DISPUTE_CATEGORIES,
+    assign_dispute,
+    create_dispute,
+    get_all_disputes,
+    get_dispute_by_id,
+    get_dispute_stats,
+    get_user_disputes,
+    resolve_dispute,
 )
 
 router = APIRouter(prefix="/disputes", tags=["Disputes"])
@@ -46,7 +51,7 @@ async def file_dispute(
             "message": "Dispute filed successfully. Our team will investigate.",
         }
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/categories")

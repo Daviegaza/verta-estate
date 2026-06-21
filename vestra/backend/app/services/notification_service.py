@@ -4,14 +4,16 @@ Includes lifecycle automated notification triggers.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update, and_
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
+
+from sqlalchemy import func, select, update
 
 from app.models.kyc_notification import Notification
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -21,8 +23,8 @@ async def create_notification(
     user_id: int,
     type: str,
     title: str,
-    body: Optional[str] = None,
-    data: Optional[dict] = None,
+    body: str | None = None,
+    data: dict | None = None,
     channel: str = "in_app",
 ) -> Notification:
     """Create an in-app notification and push it via WebSocket."""
@@ -85,14 +87,14 @@ async def get_user_notifications(
         .limit(limit)
     )
     if unread_only:
-        query = query.where(Notification.is_read == False)
+        query = query.where(not Notification.is_read)
     result = await db.execute(query)
     return result.scalars().all()
 
 
 async def mark_notification_read(
     db: AsyncSession, notification_id: int, user_id: int
-) -> Optional[Notification]:
+) -> Notification | None:
     """Mark a single notification as read."""
     result = await db.execute(
         select(Notification).where(
@@ -112,7 +114,7 @@ async def mark_all_read(db: AsyncSession, user_id: int) -> int:
     """Mark all notifications as read for a user. Returns count updated."""
     result = await db.execute(
         update(Notification)
-        .where(Notification.user_id == user_id, Notification.is_read == False)
+        .where(Notification.user_id == user_id, not Notification.is_read)
         .values(is_read=True)
     )
     await db.commit()
@@ -124,7 +126,7 @@ async def count_unread(db: AsyncSession, user_id: int) -> int:
     result = await db.execute(
         select(func.count(Notification.id)).where(
             Notification.user_id == user_id,
-            Notification.is_read == False,
+            not Notification.is_read,
         )
     )
     return result.scalar_one()
@@ -190,7 +192,7 @@ async def send_payment_receipt(
     payment_id: int,
     amount_kes: float,
     purpose: str,
-    mpesa_receipt: Optional[str] = None,
+    mpesa_receipt: str | None = None,
 ) -> Notification:
     """Send payment receipt notification after successful payment."""
     purpose_label = purpose.replace("_", " ").title() if purpose else "Payment"
@@ -352,7 +354,7 @@ async def send_complete_profile_reminders(db: AsyncSession) -> list[dict]:
     """
     from app.models.user import User
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     twenty_four_hours_ago = now - timedelta(hours=24)
     twenty_five_hours_ago = now - timedelta(hours=25)
 
@@ -394,7 +396,7 @@ async def _bg_create_notification(
     notification_type: str,
     title: str,
     body: str,
-    data: Optional[dict] = None,
+    data: dict | None = None,
 ) -> None:
     """Fire-and-forget notification creation with own DB session."""
     from app.core.database import AsyncSessionLocal

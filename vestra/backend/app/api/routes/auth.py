@@ -9,49 +9,81 @@ import base64
 import io
 import logging
 import secrets
-import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pyotp
 import qrcode
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from fastapi.security import (
+    OAuth2PasswordRequestForm,  # noqa: TC002 — used at runtime as FastAPI Depends()
+)
 from jose import JWTError, jwt
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.core.database import get_db
+from app.core.hashing import get_password_hash, verify_password
+from app.core.redis import (
+    cache_delete,
+    cache_get,
+    cache_set,
+    get_redis,
+    is_refresh_token_valid,
+    revoke_all_refresh_tokens,
+    store_refresh_token,
+)
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    get_current_user,
+    get_current_user_optional,
+    validate_password_strength,
+)
+from app.schemas.user import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
+    RefreshTokenRequest,
+    ResetPasswordRequest,
+    Token,
+    TokenRefreshResponse,
+    UserCreate,
+    UserLogin,
+    UserResponse,
+    UserUpdate,
+)
+from app.services.analytics_service import fire_and_forget_track_user_event
+from app.services.captcha_service import verify_turnstile
+from app.services.email_service import (
+    send_password_reset_email,
+    send_verification_email,
+    send_welcome_email,
+)
+from app.services.user_service import (
+    authenticate_user,
+    create_user,
+    get_user_by_email,
+    get_user_by_id,
+    update_user,
+)
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
-from app.core.database import get_db
-from app.core.config import settings
-from app.core.security import (
-    create_access_token, create_refresh_token, get_current_user,
-    get_current_user_optional,
-    get_password_hash, verify_password,
-    validate_password_strength,
-)
-from fastapi import Request
-from app.core.redis import (
-    cache_set, cache_get, cache_delete, get_redis,
-    store_refresh_token, is_refresh_token_valid, revoke_all_refresh_tokens,
-)
-from app.schemas.user import (
-    UserCreate, UserLogin, UserResponse, Token, UserUpdate,
-    ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest,
-    RefreshTokenRequest, TokenRefreshResponse,
-)
-from app.services.user_service import (
-    create_user, authenticate_user, get_user_by_email, update_user,
-    get_user_by_id,
-)
-from app.services.email_service import (
-    send_verification_email,
-    send_password_reset_email,
-    send_welcome_email,
-)
-from app.services.captcha_service import verify_turnstile
-from app.services.analytics_service import fire_and_forget_track_user_event
-
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# Module-level set to hold references to fire-and-forget tasks so they
+# are not garbage-collected mid-execution.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _fire_and_forget(coro) -> asyncio.Task:
+    """Schedule *coro* and keep a reference to prevent GC (RUF006)."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
 
 
 # ── Register ───────────────────────────────────────────────────────────────────
@@ -91,12 +123,12 @@ async def register(
     refresh_token_str, refresh_jti = create_refresh_token({"sub": str(user.id)}, client_ip=client_ip)
 
     # Store refresh token in Redis
-    asyncio.create_task(
+    _fire_and_forget(
         store_refresh_token(user.id, refresh_jti, ttl=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
     )
 
     # Store session metadata
-    asyncio.create_task(
+    _fire_and_forget(
         _store_session_metadata(
             user_id=user.id,
             jti=refresh_jti,
@@ -111,7 +143,7 @@ async def register(
     background_tasks.add_task(send_verification_email, user.email, user.full_name, verify_token)
 
     # ── Fire-and-forget: track registration event ────────────────────────
-    asyncio.create_task(
+    _fire_and_forget(
         fire_and_forget_track_user_event(
             user_id=user.id,
             event_type="registration",
@@ -120,7 +152,7 @@ async def register(
     )
 
     # ── Fire-and-forget: send welcome notification ───────────────────────
-    asyncio.create_task(
+    _fire_and_forget(
         _bg_send_welcome_notification(user.id, user.full_name)
     )
 
@@ -220,12 +252,12 @@ async def login(form_data: UserLogin, request: Request, db: AsyncSession = Depen
     refresh_token_str, refresh_jti = create_refresh_token({"sub": str(user.id)}, client_ip=client_ip)
 
     # Store refresh token in Redis
-    asyncio.create_task(
+    _fire_and_forget(
         store_refresh_token(user.id, refresh_jti, ttl=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
     )
 
     # Store session metadata
-    asyncio.create_task(
+    _fire_and_forget(
         _store_session_metadata(
             user_id=user.id,
             jti=refresh_jti,
@@ -235,12 +267,12 @@ async def login(form_data: UserLogin, request: Request, db: AsyncSession = Depen
     )
 
     # Enforce max concurrent sessions
-    asyncio.create_task(
+    _fire_and_forget(
         _enforce_max_sessions(user.id)
     )
 
     # ── Fire-and-forget: track login event ─────────────────────────────
-    asyncio.create_task(
+    _fire_and_forget(
         fire_and_forget_track_user_event(
             user_id=user.id,
             event_type="login",
@@ -372,7 +404,7 @@ async def get_auth_referral_code(
     db: AsyncSession = Depends(get_db),
 ):
     """Get current user's referral code, stats, and share link."""
-    from app.services.referral_engine import get_user_referral_stats, generate_referral_code
+    from app.services.referral_engine import generate_referral_code, get_user_referral_stats
 
     # Ensure code exists
     if not current_user.referral_code:
@@ -408,16 +440,14 @@ async def verify_email(token: str = "", db: AsyncSession = Depends(get_db)):
     await cache_delete(f"vestra:email_verify:{token}")
 
     # Send welcome email
-    import asyncio
-    asyncio.create_task(send_welcome_email(user.email, user.full_name))
+    _fire_and_forget(send_welcome_email(user.email, user.full_name))
 
     # ── Track referral status: signed_up → active (verified) ──────────────
-    from app.services.referral_engine import track_referral_verified, award_referral_reward
 
-    asyncio.create_task(_bg_update_referral_on_verify(user.id))
+    _fire_and_forget(_bg_update_referral_on_verify(user.id))
 
     # ── Fire analytics event: email_verified ──────────────────────────────
-    asyncio.create_task(
+    _fire_and_forget(
         fire_and_forget_track_user_event(
             user_id=user.id,
             event_type="email_verified",
@@ -484,7 +514,7 @@ async def refresh_token(
         if user_id is None or token_type != "refresh" or jti is None:
             raise credentials_exception
     except JWTError:
-        raise credentials_exception
+        raise credentials_exception from None
 
     # Check token is not revoked in Redis
     user_id_int = int(user_id)
@@ -512,7 +542,7 @@ async def refresh_token(
     await store_refresh_token(user_id_int, new_jti, ttl=refresh_ttl)
 
     # Store new session metadata
-    asyncio.create_task(
+    _fire_and_forget(
         _store_session_metadata(
             user_id=user_id_int,
             jti=new_jti,
@@ -647,10 +677,10 @@ async def verify_2fa(
         token = create_access_token({"sub": str(user.id)}, client_ip=client_ip)
         refresh_token_str, refresh_jti = create_refresh_token({"sub": str(user.id)}, client_ip=client_ip)
 
-        asyncio.create_task(
+        _fire_and_forget(
             store_refresh_token(user.id, refresh_jti, ttl=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400)
         )
-        asyncio.create_task(
+        _fire_and_forget(
             _store_session_metadata(
                 user_id=user.id, jti=refresh_jti, request=request, client_ip=client_ip,
             )
@@ -792,8 +822,8 @@ async def export_user_data(
     db: AsyncSession = Depends(get_db),
 ):
     """Export all personal data for the current user (GDPR Article 15)."""
-    from app.models.property import Property
     from app.models.payment import Payment
+    from app.models.property import Property
 
     # Gather user data
     user_data = {
@@ -850,7 +880,7 @@ async def export_user_data(
     ]
 
     return {
-        "export_date": datetime.now(timezone.utc).isoformat(),
+        "export_date": datetime.now(UTC).isoformat(),
         "data": user_data,
     }
 
@@ -930,7 +960,7 @@ async def _store_session_metadata(
             "device": device,
             "ip": client_ip or "",
             "user_agent": user_agent[:500],
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         })
         await r.expire(session_key, ttl)
     except Exception:
@@ -965,9 +995,9 @@ async def _enforce_max_sessions(user_id: int) -> None:
             try:
                 dt = datetime.fromisoformat(created)
             except ValueError:
-                dt = datetime.min.replace(tzinfo=timezone.utc)
+                dt = datetime.min.replace(tzinfo=UTC)
         else:
-            dt = datetime.min.replace(tzinfo=timezone.utc)
+            dt = datetime.min.replace(tzinfo=UTC)
         sessions.append((dt, key))
 
     sessions.sort(key=lambda x: x[0])
@@ -1019,8 +1049,7 @@ async def _bg_send_welcome_notification(user_id: int, full_name: str) -> None:
 async def _bg_update_referral_on_verify(user_id: int) -> None:
     """Fire-and-forget: update referral to active on email verification."""
     from app.core.database import AsyncSessionLocal
-    from app.services.referral_engine import track_referral_verified, award_referral_reward
-    from app.services.analytics_service import fire_and_forget_track_user_event
+    from app.services.referral_engine import award_referral_reward, track_referral_verified
 
     try:
         async with AsyncSessionLocal() as bg_db:

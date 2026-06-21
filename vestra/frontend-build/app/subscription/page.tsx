@@ -81,10 +81,6 @@ function SubscriptionContent() {
     super_admin: 'Admin',
   }[user?.role as string] || user?.role || '';
 
-  useEffect(() => {
-    loadPlans();
-  }, []);
-
   const loadPlans = async () => {
     try {
       const data = await api.client.get('/api/subscriptions/plans');
@@ -95,6 +91,10 @@ function SubscriptionContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadPlans();
+  }, []);
 
   const validatePhone = (phone: string): boolean => {
     return /^254\d{9}$/.test(phone);

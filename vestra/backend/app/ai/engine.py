@@ -15,12 +15,11 @@ Modules:
 """
 
 from __future__ import annotations
-import re
-import math
-from datetime import datetime
-from typing import Optional
-from dataclasses import dataclass, field
 
+import re
+from dataclasses import dataclass
+from datetime import datetime
+from typing import ClassVar
 
 # ─────────────────────────────────────────────────────────────────────────────
 # KENYA MARKET KNOWLEDGE BASE
@@ -133,14 +132,14 @@ class TrustResult:
 
 @dataclass
 class SearchResult:
-    city: Optional[str]
-    county: Optional[str]
-    property_type: Optional[str]
-    listing_type: Optional[str]
-    min_price: Optional[float]
-    max_price: Optional[float]
-    bedrooms: Optional[int]
-    bathrooms: Optional[int]
+    city: str | None
+    county: str | None
+    property_type: str | None
+    listing_type: str | None
+    min_price: float | None
+    max_price: float | None
+    bedrooms: int | None
+    bathrooms: int | None
     keywords: str
     interpretation: str
 
@@ -150,9 +149,9 @@ class ValuationResult:
     estimated_value_kes: int
     value_range_low: int
     value_range_high: int
-    rental_estimate_monthly: Optional[int]
-    rental_yield_percent: Optional[float]
-    price_per_sqft: Optional[float]
+    rental_estimate_monthly: int | None
+    rental_yield_percent: float | None
+    price_per_sqft: float | None
     market_sentiment: str
     confidence_level: str
     investment_score: int
@@ -181,7 +180,7 @@ class FraudDetector:
         listing_type: str,
         documents: list[dict],
         agent_verified: bool,
-        agent_license: Optional[str],
+        agent_license: str | None,
     ) -> tuple[float, list[str], list[str]]:
         text = f"{title} {description}".lower()
         flags: list[str] = []
@@ -475,8 +474,8 @@ class PriceAnalyser:
         price: float,
         city: str,
         listing_type: str,
-        bedrooms: Optional[int],
-        size_sqft: Optional[float],
+        bedrooms: int | None,
+        size_sqft: float | None,
     ) -> tuple[str, dict]:
         city_key = self._normalize_city(city)
         band = KENYA_PRICE_BANDS.get(city_key, KENYA_PRICE_BANDS["default"])
@@ -495,7 +494,7 @@ class PriceAnalyser:
                 low = int(low * max(0.4, multiplier))
                 high = int(high * max(0.4, multiplier))
 
-        mid = (low + high) / 2
+        (low + high) / 2
         tolerance = 0.2  # 20% tolerance
 
         if price < low * (1 - tolerance):
@@ -557,25 +556,25 @@ class SearchParser:
             interpretation=interpretation,
         )
 
-    def _extract_city(self, q: str) -> Optional[str]:
+    def _extract_city(self, q: str) -> str | None:
         for city in sorted(KENYA_CITIES_LIST, key=len, reverse=True):
             if city in q:
                 return city.title()
         return None
 
-    def _extract_listing_type(self, q: str) -> Optional[str]:
+    def _extract_listing_type(self, q: str) -> str | None:
         for lt, keywords in LISTING_TYPE_KEYWORDS.items():
             if any(kw in q for kw in keywords):
                 return lt
         return None
 
-    def _extract_property_type(self, q: str) -> Optional[str]:
+    def _extract_property_type(self, q: str) -> str | None:
         for pt, keywords in PROPERTY_TYPE_KEYWORDS.items():
             if any(kw in q for kw in keywords):
                 return pt
         return None
 
-    def _extract_bedrooms(self, q: str) -> Optional[int]:
+    def _extract_bedrooms(self, q: str) -> int | None:
         patterns = [
             r'(\d+)\s*(?:bed|bedroom|br|bdr)',
             r'(\d+)\s*(?:bhk)',
@@ -589,13 +588,13 @@ class SearchParser:
                 return int(m.group(1))
         return None
 
-    def _extract_bathrooms(self, q: str) -> Optional[int]:
+    def _extract_bathrooms(self, q: str) -> int | None:
         m = re.search(r'(\d+)\s*(?:bath|bathroom)', q)
         return int(m.group(1)) if m else None
 
-    def _extract_price(self, q: str, listing_type: Optional[str]) -> tuple[Optional[float], Optional[float]]:
-        min_p: Optional[float] = None
-        max_p: Optional[float] = None
+    def _extract_price(self, q: str, listing_type: str | None) -> tuple[float | None, float | None]:
+        min_p: float | None = None
+        max_p: float | None = None
 
         # Normalize shorthand: 40k → 40000, 1m → 1000000, 1.5m → 1500000
         q_norm = re.sub(r'(\d+(?:\.\d+)?)\s*k', lambda m: str(int(float(m.group(1)) * 1_000)), q)
@@ -620,15 +619,11 @@ class SearchParser:
         return min_p, max_p
 
     def _clean_keywords(self, q: str) -> str:
-        stop = set(KENYA_CITIES_LIST + [
-            "for", "rent", "sale", "buy", "looking", "find", "want",
-            "need", "a", "an", "the", "in", "at", "with", "under", "above",
-            "kes", "bedroom", "bed", "bath", "to", "i", "me", "and", "or",
-        ])
+        stop = {*KENYA_CITIES_LIST, "for", "rent", "sale", "buy", "looking", "find", "want", "need", "a", "an", "the", "in", "at", "with", "under", "above", "kes", "bedroom", "bed", "bath", "to", "i", "me", "and", "or"}
         words = [w for w in q.split() if w not in stop and len(w) > 2]
         return " ".join(words[:10])
 
-    def _city_to_county(self, city: Optional[str]) -> Optional[str]:
+    def _city_to_county(self, city: str | None) -> str | None:
         mapping = {
             "Nairobi": "Nairobi", "Karen": "Nairobi", "Westlands": "Nairobi",
             "Kilimani": "Nairobi", "Lavington": "Nairobi", "Runda": "Nairobi",
@@ -639,7 +634,7 @@ class SearchParser:
             "Mombasa": "Mombasa", "Kisumu": "Kisumu", "Nakuru": "Nakuru",
             "Eldoret": "Uasin Gishu",
         }
-        return mapping.get(city or "", None)
+        return mapping.get(city or "")
 
     def _build_interpretation(self, city, listing_type, property_type, bedrooms, min_p, max_p) -> str:
         parts = ["Searching for"]
@@ -669,7 +664,7 @@ class SearchParser:
 class DocumentAnalyser:
     """Flags issues with submitted documents based on type and listing type."""
 
-    DOCUMENT_DESCRIPTIONS = {
+    DOCUMENT_DESCRIPTIONS: ClassVar[dict[str, str]] = {
         "title_deed": "Title Deed",
         "sale_agreement": "Sale Agreement",
         "lease_agreement": "Lease Agreement",
@@ -692,11 +687,11 @@ class DocumentAnalyser:
         for doc_type in missing:
             label = self.DOCUMENT_DESCRIPTIONS.get(doc_type, doc_type)
             if doc_type == "title_deed":
-                flags.append(f"CRITICAL: No Title Deed uploaded — cannot confirm ownership without it")
+                flags.append("CRITICAL: No Title Deed uploaded — cannot confirm ownership without it")
             elif doc_type == "land_search":
-                flags.append(f"Missing Land Search Certificate — required to confirm no encumbrances")
+                flags.append("Missing Land Search Certificate — required to confirm no encumbrances")
             elif doc_type == "rates_clearance":
-                flags.append(f"Missing Rates Clearance Certificate — seller must prove no outstanding land rates")
+                flags.append("Missing Rates Clearance Certificate — seller must prove no outstanding land rates")
             else:
                 flags.append(f"Missing: {label}")
 
@@ -722,9 +717,9 @@ class ValuationEngine:
         city: str,
         listing_type: str,
         property_type: str,
-        bedrooms: Optional[int],
-        size_sqft: Optional[float],
-        year_built: Optional[int],
+        bedrooms: int | None,
+        size_sqft: float | None,
+        year_built: int | None,
         amenities: list[str],
         submitted_price: float,
     ) -> ValuationResult:
@@ -820,7 +815,7 @@ class ValuationEngine:
                 return key
         return "default"
 
-    def _investment_score(self, city_key: str, prop_type: str, rental_yield: Optional[float], value: int) -> int:
+    def _investment_score(self, city_key: str, prop_type: str, rental_yield: float | None, value: int) -> int:
         score = 50
         # Prime areas score higher
         prime = {"karen", "runda", "muthaiga", "westlands", "kilimani", "lavington"}
@@ -848,7 +843,7 @@ class ValuationEngine:
             return "neutral"
         return "neutral"
 
-    def _value_drivers(self, city: str, prop_type: str, amenities: list, bedrooms: Optional[int]) -> list[str]:
+    def _value_drivers(self, city: str, prop_type: str, amenities: list, bedrooms: int | None) -> list[str]:
         drivers = [f"Prime {city} location"]
         if bedrooms and bedrooms >= 3:
             drivers.append("Family-sized unit in high demand")
@@ -862,7 +857,7 @@ class ValuationEngine:
             drivers.append("Growing Kenyan middle class demand")
         return drivers[:4]
 
-    def _risk_factors(self, city_key: str, year_built: Optional[int], prop_type: str) -> list[str]:
+    def _risk_factors(self, city_key: str, year_built: int | None, prop_type: str) -> list[str]:
         risks = []
         if year_built and (datetime.now().year - year_built) > 20:
             risks.append("Older property — factor in renovation costs")
@@ -916,7 +911,7 @@ class MarketIntelligence:
             "avg_price_per_sqft": band[4],
             "supply_demand": "high demand/low supply" if city_key in hot_cities else "balanced",
             "trend_summary": f"{city} continues to see strong demand driven by urbanisation and infrastructure investment.",
-            "best_time_to_buy": "now" if city_key in hot_cities else "now",
+            "best_time_to_buy": "now",
             "investor_tip": f"Focus on areas near upcoming infrastructure in {city} for best capital gains.",
         }
 
@@ -946,7 +941,7 @@ class VestraAI:
         self,
         property_data: dict,
         documents: list[dict],
-        agent_info: Optional[dict] = None,
+        agent_info: dict | None = None,
     ) -> dict:
         """
         Full AI property verification.

@@ -1,25 +1,35 @@
 import asyncio
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.property import ListingType, PropertyStatus, PropertyType
+from app.models.user import UserRole
 from app.schemas.property import (
-    PropertyCreate, PropertyUpdate, PropertyResponse,
-    PropertyListResponse, PropertySearch
+    PropertyCreate,
+    PropertySearch,
+    PropertyUpdate,
+)
+from app.services.analytics_service import (
+    fire_and_forget_track_search,
+    fire_and_forget_track_user_event,
 )
 from app.services.property_service import (
-    create_property, get_property_by_id, update_property,
-    delete_property, search_properties, get_owner_properties,
-    increment_property_views, count_user_listings_this_month,
-    FREE_LISTINGS_PER_MONTH_UNSUBSCRIBED, LISTING_FEE_KES,
+    FREE_LISTINGS_PER_MONTH_UNSUBSCRIBED,
+    LISTING_FEE_KES,
+    count_user_listings_this_month,
+    create_property,
+    delete_property,
+    get_owner_properties,
+    get_property_by_id,
+    increment_property_views,
+    search_properties,
+    update_property,
 )
-from app.services.ai_service import generate_ai_property_search
 from app.services.subscription_service import get_user_subscription
-from app.services.analytics_service import fire_and_forget_track_search, fire_and_forget_track_user_event
-from app.models.user import UserRole
-from app.models.property import PropertyType, ListingType, PropertyStatus
 
 logger = logging.getLogger("vestra.properties")
 
@@ -37,7 +47,7 @@ async def create_new_property(
         prop = await create_property(db, current_user.id, data)
 
         # ── Fire-and-forget: track property_created event ──────────────────
-        asyncio.create_task(
+        asyncio.create_task(  # noqa: RUF006
             fire_and_forget_track_user_event(
                 user_id=current_user.id,
                 event_type="property_created",
@@ -46,7 +56,7 @@ async def create_new_property(
         )
 
         # ── Fire-and-forget: send verify property prompt ──────────────────
-        asyncio.create_task(
+        asyncio.create_task(  # noqa: RUF006
             _bg_send_verify_property_prompt(
                 user_id=current_user.id,
                 property_id=prop.id,
@@ -56,19 +66,19 @@ async def create_new_property(
 
         return _prop_to_dict(prop)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(e)) from e
 
 
 @router.get("/")
 async def list_properties(
-    query: Optional[str] = Query(None),
-    city: Optional[str] = Query(None),
-    county: Optional[str] = Query(None),
-    property_type: Optional[PropertyType] = Query(None),
-    listing_type: Optional[ListingType] = Query(None),
-    min_price: Optional[float] = Query(None),
-    max_price: Optional[float] = Query(None),
-    bedrooms: Optional[int] = Query(None),
+    query: str | None = Query(None),
+    city: str | None = Query(None),
+    county: str | None = Query(None),
+    property_type: PropertyType | None = Query(None),
+    listing_type: ListingType | None = Query(None),
+    min_price: float | None = Query(None),
+    max_price: float | None = Query(None),
+    bedrooms: int | None = Query(None),
     verified_only: bool = Query(False),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -83,7 +93,7 @@ async def list_properties(
     )
     result = await search_properties(db, search)
     # ── Fire-and-forget: track search analytics ──────────────────────────
-    asyncio.create_task(
+    asyncio.create_task(  # noqa: RUF006
         fire_and_forget_track_search(
             user_id=None,  # public searches are not authenticated
             query=search.query or "",
@@ -168,7 +178,7 @@ async def get_property(
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
     # ── Fire-and-forget: track property view event ────────────────────────
-    asyncio.create_task(
+    asyncio.create_task(  # noqa: RUF006
         fire_and_forget_track_user_event(
             user_id=None,
             event_type="view",
@@ -398,8 +408,8 @@ async def feature_property(
     if prop.status != PropertyStatus.active:
         raise HTTPException(status_code=400, detail="Only active listings can be featured")
 
-    from app.services.payment_service import initiate_mpesa_payment
     from app.models.payment import PaymentPurpose
+    from app.services.payment_service import initiate_mpesa_payment
 
     payment = await initiate_mpesa_payment(
         db=db,
@@ -428,7 +438,6 @@ async def listing_fee_info(
     db: AsyncSession = Depends(get_db),
 ):
     """Get listing fee and usage info for the current user."""
-    from datetime import datetime, timezone
     sub = await get_user_subscription(db, current_user.id)
     tier = sub.get("tier", "free") if sub else "free"
     count_this_month = await count_user_listings_this_month(db, current_user.id)
@@ -447,7 +456,7 @@ async def listing_fee_info(
         "message": (
             f"You have used {count_this_month}/{limit} listings this month."
             if limit < 999999 else
-            f"You have unlimited listings."
+            "You have unlimited listings."
         ),
     }
 

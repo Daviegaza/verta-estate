@@ -11,15 +11,13 @@ no costs, instant responses.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import logging
-from typing import Optional
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import TYPE_CHECKING
 
 from app.ai.engine import vestra_ai
-from app.core.redis import cache_get, cache_set
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra.smart_ai")
 
@@ -34,7 +32,7 @@ async def _run_in_executor(func, *args, **kwargs):
 async def smart_search(
     db: AsyncSession,
     query: str,
-    current_user_id: Optional[int] = None,
+    current_user_id: int | None = None,
 ) -> dict:
     """
     One-stop AI property search. User types natural language,
@@ -46,8 +44,8 @@ async def smart_search(
     parsed = await _run_in_executor(vestra_ai.parse_search, query)
 
     # Step 2: Search properties using parsed filters
-    from app.services.property_service import search_properties
     from app.schemas.property import PropertySearch
+    from app.services.property_service import search_properties
 
     search = PropertySearch(
         query=parsed.get("keywords"),

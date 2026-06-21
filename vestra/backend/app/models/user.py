@@ -1,12 +1,14 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, Text, ForeignKey
+import enum
+
+from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import enum
+
 from app.core.database import Base
-from app.core.encryption import encrypt_field, decrypt_field
+from app.core.encryption import decrypt_field, encrypt_field
 
 
-class UserRole(str, enum.Enum):
+class UserRole(enum.StrEnum):
     buyer = "buyer"
     seller = "seller"
     agent = "agent"

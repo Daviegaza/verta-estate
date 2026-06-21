@@ -221,7 +221,7 @@ function TenantsContent() {
           <Users className="w-14 h-14 text-gray-200 mx-auto mb-4" />
           <h2 className="text-lg font-semibold text-gray-700 mb-2">No Tenants Yet</h2>
           <p className="text-gray-500 text-sm mb-6">
-            Add tenants to your vacant units. They'll automatically see their rental when they log in.
+            Add tenants to your vacant units. They&apos;ll automatically see their rental when they log in.
           </p>
           <Button onClick={() => setShowAddTenant(true)} className="bg-violet-600 hover:bg-violet-500 gap-2">
             <UserPlus className="w-4 h-4" /> Add Your First Tenant

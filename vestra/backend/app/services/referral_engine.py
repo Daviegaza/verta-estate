@@ -9,16 +9,19 @@ Based on Uber/Airbnb/PayPal viral growth models.
 """
 from __future__ import annotations
 
-import uuid
 import asyncio
 import logging
 import secrets
-from datetime import datetime, timezone, timedelta
-from typing import Optional
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+import uuid
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
-from app.core.redis import cache_get, cache_set, cache_delete
+from sqlalchemy import func, or_, select
+
+from app.core.redis import cache_get, cache_set
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -82,7 +85,7 @@ async def generate_referral_code(db: AsyncSession, user_id: int) -> str:
     return fallback
 
 
-async def get_referrer_id(db: AsyncSession, code: str) -> Optional[int]:
+async def get_referrer_id(db: AsyncSession, code: str) -> int | None:
     """Get the user_id associated with a referral code.
 
     Checks Redis first (fast path), then falls back to database.
@@ -108,7 +111,7 @@ async def get_referrer_id(db: AsyncSession, code: str) -> Optional[int]:
 
 async def track_referral_signup(
     db: AsyncSession, new_user_id: int, referral_code: str,
-) -> Optional[dict]:
+) -> dict | None:
     """Track a new user who signed up via referral link."""
     referrer_id = await get_referrer_id(db, referral_code)
     if not referrer_id or referrer_id == new_user_id:
@@ -132,7 +135,7 @@ async def track_referral_signup(
         referred_user_id=new_user_id,
         referral_code=referral_code,
         status="signed_up",
-        signup_at=datetime.now(timezone.utc),
+        signup_at=datetime.now(UTC),
     )
     db.add(referral)
     await db.commit()
@@ -141,7 +144,7 @@ async def track_referral_signup(
     return {"referrer_id": referrer_id, "reward_pending": True}
 
 
-async def track_referral_verified(db: AsyncSession, user_id: int) -> Optional[dict]:
+async def track_referral_verified(db: AsyncSession, user_id: int) -> dict | None:
     """Mark a referred user as email-verified (active status)."""
     from app.models.referral import Referral
 
@@ -157,7 +160,7 @@ async def track_referral_verified(db: AsyncSession, user_id: int) -> Optional[di
 
     referral.status = "active"
     referral.rewards_earned = (referral.rewards_earned or 0)
-    referral.converted_at = datetime.now(timezone.utc)
+    referral.converted_at = datetime.now(UTC)
     await db.commit()
 
     logger.info('{"event":"referral_verified","referrer":%d,"referred":%d}', referral.referrer_id, user_id)
@@ -166,7 +169,7 @@ async def track_referral_verified(db: AsyncSession, user_id: int) -> Optional[di
 
 async def award_referral_reward(
     db: AsyncSession, user_id: int, action: str,
-) -> Optional[dict]:
+) -> dict | None:
     """
     Award a referral reward when a referred user completes a valuable action.
     Called after: email verify, first listing, first payment, subscription, etc.
@@ -211,12 +214,9 @@ async def award_referral_reward(
     referral.total_rewards = current_total + reward["kes"]
 
     # Update status based on action
-    if action == "first_payment":
+    if action == "first_payment" or action == "subscription":
         referral.status = "converted"
-        referral.converted_at = datetime.now(timezone.utc)
-    elif action == "subscription":
-        referral.status = "converted"
-        referral.converted_at = datetime.now(timezone.utc)
+        referral.converted_at = datetime.now(UTC)
 
     await db.commit()
 
@@ -238,13 +238,15 @@ async def award_referral_reward(
     )
 
     # ── Fire event bus: referral rewarded ──────────────────────────────────
-    asyncio.create_task(_bg_emit_referral_event(
-        referrer_id=referral.referrer_id,
-        action=action,
-        reward_kes=reward["kes"],
-        reward_type=reward["type"],
-        referred_user_id=user_id,
-    ))
+    asyncio.create_task(  # noqa: RUF006
+        _bg_emit_referral_event(
+            referrer_id=referral.referrer_id,
+            action=action,
+            reward_kes=reward["kes"],
+            reward_type=reward["type"],
+            referred_user_id=user_id,
+        )
+    )
 
     return {
         "referrer_id": referral.referrer_id,
@@ -384,15 +386,15 @@ async def get_referral_leaderboard(db: AsyncSession, limit: int = 20) -> list:
 async def claim_referral_earnings(
     db: AsyncSession,
     user_id: int,
-    amount_kes: Optional[float] = None,
+    amount_kes: float | None = None,
 ) -> dict:
     """
     Claim referral earnings as account credit.
     If amount_kes is None, claim all available credit-type earnings.
     Creates a payout record and resets the claimed credit balance.
     """
-    from app.models.referral import ReferralReward
     from app.models.enterprise import Payout, PayoutStatus
+    from app.models.referral import ReferralReward
     from app.models.user import User
 
     # Calculate available credit (unclaimed credit-type rewards)
@@ -436,7 +438,7 @@ async def claim_referral_earnings(
         type="referral_reward",
         status=PayoutStatus.pending,
         mpesa_phone=mpesa_phone,
-        reference=f"REF-{user_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        reference=f"REF-{user_id}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}",
     )
     db.add(payout)
     await db.commit()
@@ -447,7 +449,7 @@ async def claim_referral_earnings(
     )
 
     # ── Fire event bus ────────────────────────────────────────────────────
-    asyncio.create_task(_bg_emit_payout_event(user_id, claim_amount))
+    asyncio.create_task(_bg_emit_payout_event(user_id, claim_amount))  # noqa: RUF006
 
     return {
         "success": True,
@@ -497,7 +499,7 @@ async def _bg_emit_referral_event(
     referred_user_id: int,
 ) -> None:
     """Fire-and-forget: emit referral.rewarded event."""
-    from app.services.event_bus import emit_event, EVENT_REFERRAL_REWARDED
+    from app.services.event_bus import EVENT_REFERRAL_REWARDED, emit_event
 
     try:
         data = {
@@ -520,7 +522,7 @@ async def _bg_emit_referral_event(
 
 async def _bg_emit_payout_event(user_id: int, amount_kes: float) -> None:
     """Fire-and-forget: emit payout.processed event."""
-    from app.services.event_bus import emit_event, EVENT_PAYOUT_PROCESSED
+    from app.services.event_bus import EVENT_PAYOUT_PROCESSED, emit_event
 
     try:
         await emit_event(

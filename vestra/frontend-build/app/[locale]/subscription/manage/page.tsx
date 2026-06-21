@@ -104,10 +104,6 @@ function ManageSubscriptionContent() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [fetchingBilling, setFetchingBilling] = useState(true);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const loadData = async () => {
     try {
       setError('');
@@ -115,7 +111,7 @@ function ManageSubscriptionContent() {
         api.getMySubscription(),
         api.getMyPayments(),
       ]);
-      setSubData(sub);
+      setSubData(sub as unknown as SubscriptionData);
 
       const billing = (payments || [])
         .filter((p) => p.purpose === 'subscription')
@@ -128,6 +124,10 @@ function ManageSubscriptionContent() {
       setFetchingBilling(false);
     }
   };
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const handleCancelSubscription = async () => {
     try {

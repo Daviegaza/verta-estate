@@ -9,14 +9,16 @@ import hashlib
 import hmac
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import httpx
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.models.enterprise import Webhook, WebhookEvent
+from app.models.enterprise import Webhook
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("vestra")
 
@@ -87,7 +89,7 @@ async def trigger_webhook(
 
     result = await db.execute(
         select(Webhook).where(
-            Webhook.is_active == True,
+            Webhook.is_active,
             Webhook.events.contains([event]),
         )
     )
@@ -98,7 +100,7 @@ async def trigger_webhook(
 
     payload = {
         "event": event,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "data": data,
     }
     payload_bytes = json.dumps(payload, default=str).encode()
@@ -145,7 +147,7 @@ async def _deliver_webhook(
                 if response.status_code < 500:
                     # Success or client error — don't retry
                     if response.status_code >= 200 and response.status_code < 300:
-                        webhook.last_success_at = datetime.now(timezone.utc)
+                        webhook.last_success_at = datetime.now(UTC)
                         webhook.failures = 0
                     else:
                         webhook.failures += 1

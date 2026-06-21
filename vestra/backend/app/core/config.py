@@ -1,7 +1,5 @@
+
 from pydantic_settings import BaseSettings
-from typing import List
-import os
-import secrets
 
 
 class Settings(BaseSettings):
@@ -76,7 +74,7 @@ class Settings(BaseSettings):
     # ── Uploads ─────────────────────────────────────────────────────────────
     UPLOAD_DIR: str = "./uploads"
     MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10MB
-    ALLOWED_UPLOAD_MIME_TYPES: List[str] = [
+    ALLOWED_UPLOAD_MIME_TYPES: list[str] = [
         "application/pdf", "image/jpeg", "image/png",
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -117,7 +115,7 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_SESSIONS: int = 5
 
     @property
-    def cors_origins_list(self) -> List[str]:
+    def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",")]
 
     class Config:

@@ -1,8 +1,20 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
+
+// Augment Axios types to support custom retry flag
+declare module 'axios' {
+  interface InternalAxiosRequestConfig {
+    _retry?: boolean;
+  }
+}
+
 import type {
   AuthToken, User, Property, PropertyListResponse,
   PropertyCreate, Verification, Payment, AdminStats,
-  PropertySearch, AISearchResult
+  PropertySearch, AISearchResult,
+  VestimaEstimate, VestimaHistoryEntry,
+  EscrowTransaction, Dispute, Review, SubjectReviews, Payout,
+  KYCVerification, SubscriptionPlan, UserSubscription,
+  APIKeyInfo, WebhookInfo,
 } from '@/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -42,7 +54,7 @@ class VestraAPIClient {
   private isRefreshing = false;
   private failedQueue: Array<{
     resolve: (token: string) => void;
-    reject: (error: any) => void;
+    reject: (error: unknown) => void;
   }> = [];
 
   constructor() {
@@ -78,7 +90,7 @@ class VestraAPIClient {
           return Promise.reject(error);
         }
 
-        const originalRequest = error.config as any;
+        const originalRequest = error.config as InternalAxiosRequestConfig;
 
         // Don't retry the refresh endpoint itself
         if (originalRequest.url?.includes('/api/auth/refresh')) {
@@ -146,7 +158,7 @@ class VestraAPIClient {
     );
   }
 
-  private processQueue(error: any, token: string | null = null): void {
+  private processQueue(error: unknown, token: string | null = null): void {
     this.failedQueue.forEach(({ resolve, reject }) => {
       if (error) {
         reject(error);
@@ -157,7 +169,7 @@ class VestraAPIClient {
     this.failedQueue = [];
   }
 
-  private clearAuthAndRedirect(originalRequest?: any): void {
+  private clearAuthAndRedirect(originalRequest?: InternalAxiosRequestConfig): void {
     if (typeof window === 'undefined') return;
 
     // Only force-redirect if user is on an explicitly auth-required path
@@ -289,9 +301,9 @@ class VestraAPIClient {
     });
   }
 
-  async aiPropertyInsights(propertyId: number): Promise<any> {
+  async aiPropertyInsights(propertyId: number): Promise<Record<string, unknown>> {
     return withRetry(async () => {
-      const res = await this.client.get(`/api/ai/insights/${propertyId}`);
+      const res = await this.client.get<Record<string, unknown>>(`/api/ai/insights/${propertyId}`);
       return res.data;
     });
   }
@@ -324,11 +336,10 @@ class VestraAPIClient {
 
   async getMyProperties(): Promise<Property[]> {
     return withRetry(async () => {
-      const res = await this.client.get<any>('/api/properties/my');
+      const res = await this.client.get<{ items: Property[]; total: number }>('/api/properties/my');
       // Backend returns { items: [...], total: N } — unwrap if needed
       const data = res.data;
       if (data && Array.isArray(data.items)) return data.items;
-      if (Array.isArray(data)) return data;
       return [];
     });
   }
@@ -412,39 +423,39 @@ class VestraAPIClient {
 
   // ─── AI ────────────────────────────────────────────────────────────────────
 
-  async valuateProperty(propertyId: number): Promise<{ valuation: any }> {
+  async valuateProperty(propertyId: number): Promise<{ valuation: Record<string, unknown> }> {
     return withRetry(async () => {
-      const res = await this.client.get<{ valuation: any }>(`/api/ai/valuate/${propertyId}`);
+      const res = await this.client.get<{ valuation: Record<string, unknown> }>(`/api/ai/valuate/${propertyId}`);
       return res.data;
     });
   }
 
-  async getMarketInsights(city: string, listingType?: string): Promise<any> {
+  async getMarketInsights(city: string, listingType?: string): Promise<Record<string, unknown>> {
     return withRetry(async () => {
-      const res = await this.client.get<any>('/api/ai/market', {
+      const res = await this.client.get<Record<string, unknown>>('/api/ai/market', {
         params: { city, listing_type: listingType },
       });
       return res.data;
     });
   }
 
-  async getVestimaEstimate(propertyId: number): Promise<{ property_id: number; vestima: import('@/types').VestimaEstimate }> {
+  async getVestimaEstimate(propertyId: number): Promise<{ property_id: number; vestima: VestimaEstimate }> {
     return withRetry(async () => {
-      const res = await this.client.get(`/api/ai/vestima/${propertyId}`);
+      const res = await this.client.get<{ property_id: number; vestima: VestimaEstimate }>(`/api/ai/vestima/${propertyId}`);
       return res.data;
     });
   }
 
-  async getVestimaCustomEstimate(data: Record<string, any>): Promise<{ vestima: import('@/types').VestimaEstimate }> {
+  async getVestimaCustomEstimate(data: Record<string, unknown>): Promise<{ vestima: VestimaEstimate }> {
     return withRetry(async () => {
-      const res = await this.client.post('/api/ai/vestima/custom', data);
+      const res = await this.client.post<{ vestima: VestimaEstimate }>('/api/ai/vestima/custom', data);
       return res.data;
     });
   }
 
-  async getVestimaHistory(propertyId: number, limit = 5): Promise<{ property_id: number; history: import('@/types').VestimaHistoryEntry[] }> {
+  async getVestimaHistory(propertyId: number, limit = 5): Promise<{ property_id: number; history: VestimaHistoryEntry[] }> {
     return withRetry(async () => {
-      const res = await this.client.get(`/api/ai/vestima/history/${propertyId}`, {
+      const res = await this.client.get<{ property_id: number; history: VestimaHistoryEntry[] }>(`/api/ai/vestima/history/${propertyId}`, {
         params: { limit },
       });
       return res.data;
@@ -477,69 +488,69 @@ class VestraAPIClient {
     return res.data;
   }
 
-  async getAdminProperties(skip = 0, limit = 50, status?: string): Promise<{ items: any[]; total: number }> {
-    const res = await this.client.get('/api/admin/properties', { params: { skip, limit, status } });
+  async getAdminProperties(skip = 0, limit = 50, status?: string): Promise<{ items: Property[]; total: number }> {
+    const res = await this.client.get<{ items: Property[]; total: number }>('/api/admin/properties', { params: { skip, limit, status } });
     return res.data;
   }
 
   async setPropertyStatus(propertyId: number, status: string): Promise<{ message: string }> {
-    const res = await this.client.put(`/api/admin/properties/${propertyId}/status`, null, {
+    const res = await this.client.put<{ message: string }>(`/api/admin/properties/${propertyId}/status`, null, {
       params: { status },
     });
     return res.data;
   }
 
-  async getPendingVerifications(limit = 20): Promise<any[]> {
-    const res = await this.client.get('/api/admin/verifications/pending', { params: { limit } });
+  async getPendingVerifications(limit = 20): Promise<Verification[]> {
+    const res = await this.client.get<Verification[]>('/api/admin/verifications/pending', { params: { limit } });
     return res.data;
   }
 
   async reviewVerification(verificationId: number, status: string, notes?: string): Promise<{ message: string }> {
-    const res = await this.client.put(`/api/admin/verifications/${verificationId}/review`, null, {
+    const res = await this.client.put<{ message: string }>(`/api/admin/verifications/${verificationId}/review`, null, {
       params: { status, notes },
     });
     return res.data;
   }
 
   async deleteUser(userId: number): Promise<{ message: string }> {
-    const res = await this.client.delete(`/api/admin/users/${userId}`);
+    const res = await this.client.delete<{ message: string }>(`/api/admin/users/${userId}`);
     return res.data;
   }
 
-  async getAdminPayments(skip = 0, limit = 50, status?: string): Promise<{ items: any[]; total: number }> {
-    const res = await this.client.get('/api/admin/payments', { params: { skip, limit, status } });
+  async getAdminPayments(skip = 0, limit = 50, status?: string): Promise<{ items: Payment[]; total: number }> {
+    const res = await this.client.get<{ items: Payment[]; total: number }>('/api/admin/payments', { params: { skip, limit, status } });
     return res.data;
   }
 
   async refundPayment(paymentId: number): Promise<{ message: string }> {
-    const res = await this.client.post(`/api/admin/payments/${paymentId}/refund`);
+    const res = await this.client.post<{ message: string }>(`/api/admin/payments/${paymentId}/refund`);
     return res.data;
   }
 
-  async getAuditLogs(skip = 0, limit = 100, userId?: number, action?: string): Promise<{ items: any[]; total: number }> {
-    const res = await this.client.get('/api/admin/audit-logs', { params: { skip, limit, user_id: userId, action } });
+  async getAuditLogs(skip = 0, limit = 100, userId?: number, action?: string): Promise<{ items: Record<string, unknown>[]; total: number }> {
+    const res = await this.client.get<{ items: Record<string, unknown>[]; total: number }>('/api/admin/audit-logs', { params: { skip, limit, user_id: userId, action } });
     return res.data;
   }
 
-  async getFraudReports(limit = 50, status?: string): Promise<{ items: any[] }> {
-    const res = await this.client.get('/api/admin/fraud-reports', { params: { limit, status } });
+  async getFraudReports(limit = 50, status?: string): Promise<{ items: Record<string, unknown>[] }> {
+    const res = await this.client.get<{ items: Record<string, unknown>[] }>('/api/admin/fraud-reports', { params: { limit, status } });
     return res.data;
   }
 
   async reviewFraudReport(reportId: number, status: string, notes?: string): Promise<{ message: string }> {
-    const res = await this.client.put(`/api/admin/fraud-reports/${reportId}/review`, null, {
+    const res = await this.client.put<{ message: string }>(`/api/admin/fraud-reports/${reportId}/review`, null, {
       params: { status, notes },
     });
     return res.data;
   }
 
-  async getPendingKYC(limit = 20): Promise<{ items: any[]; total: number }> {
-    const res = await this.client.get('/api/admin/kyc/pending', { params: { limit } });
+  async getPendingKYC(limit = 20): Promise<{ items: KYCVerification[]; total: number }> {
+    const res = await this.client.get<{ items: KYCVerification[]; total: number }>('/api/admin/kyc/pending', { params: { limit } });
     return res.data;
   }
 
   async reviewKYC(kycId: number, status: string, rejectionReason?: string): Promise<{ message: string }> {
-    const res = await this.client.put(`/api/admin/kyc/${kycId}/review`, null, {
+    const res = await this.client.put<{ message: string }>(`/api/admin/kyc/${kycId}/review`, null, {
       params: { status, rejection_reason: rejectionReason },
     });
     return res.data;
@@ -547,29 +558,29 @@ class VestraAPIClient {
 
   // ─── Subscriptions ──────────────────────────────────────────────────────────
 
-  async getPlans(): Promise<{ role: string; plans: any[]; current_tier: string }> {
+  async getPlans(): Promise<{ role: string; plans: SubscriptionPlan[]; current_tier: string }> {
     return withRetry(async () => {
-      const res = await this.client.get('/api/subscriptions/plans');
+      const res = await this.client.get<{ role: string; plans: SubscriptionPlan[]; current_tier: string }>('/api/subscriptions/plans');
       return res.data;
     });
   }
 
-  async getMySubscription(): Promise<{ subscription: any; listing_limit: number; role: string }> {
+  async getMySubscription(): Promise<{ subscription: UserSubscription; listing_limit: number; role: string }> {
     return withRetry(async () => {
-      const res = await this.client.get('/api/subscriptions/my');
+      const res = await this.client.get<{ subscription: UserSubscription; listing_limit: number; role: string }>('/api/subscriptions/my');
       return res.data;
     });
   }
 
-  async subscribe(tier: string, phoneNumber: string): Promise<any> {
-    const res = await this.client.post('/api/subscriptions/subscribe', null, {
+  async subscribe(tier: string, phoneNumber: string): Promise<Record<string, unknown>> {
+    const res = await this.client.post<Record<string, unknown>>('/api/subscriptions/subscribe', null, {
       params: { tier, phone_number: phoneNumber },
     });
     return res.data;
   }
 
-  async cancelSubscription(): Promise<any> {
-    const res = await this.client.post('/api/subscriptions/cancel');
+  async cancelSubscription(): Promise<Record<string, unknown>> {
+    const res = await this.client.post<Record<string, unknown>>('/api/subscriptions/cancel');
     return res.data;
   }
 
@@ -584,8 +595,8 @@ class VestraAPIClient {
     });
   }
 
-  async featureProperty(propertyId: number, phoneNumber: string): Promise<any> {
-    const res = await this.client.post(`/api/properties/${propertyId}/feature`, null, {
+  async featureProperty(propertyId: number, phoneNumber: string): Promise<Record<string, unknown>> {
+    const res = await this.client.post<Record<string, unknown>>(`/api/properties/${propertyId}/feature`, null, {
       params: { phone_number: phoneNumber },
     });
     return res.data;
@@ -593,9 +604,9 @@ class VestraAPIClient {
 
   // ─── Reports ────────────────────────────────────────────────────────────────
 
-  async getVerificationReport(verificationId: number): Promise<any> {
+  async getVerificationReport(verificationId: number): Promise<Record<string, unknown>> {
     return withRetry(async () => {
-      const res = await this.client.get(`/api/reports/verification/${verificationId}`);
+      const res = await this.client.get<Record<string, unknown>>(`/api/reports/verification/${verificationId}`);
       return res.data;
     });
   }
@@ -609,53 +620,53 @@ class VestraAPIClient {
 
   // ─── Enterprise API ──────────────────────────────────────────────────────────
 
-  async createApiKey(name: string, scopes?: string, rateLimit?: number): Promise<any> {
-    const res = await this.client.post('/api/enterprise/keys', null, {
+  async createApiKey(name: string, scopes?: string, rateLimit?: number): Promise<APIKeyInfo> {
+    const res = await this.client.post<APIKeyInfo>('/api/enterprise/keys', null, {
       params: { name, scopes, rate_limit: rateLimit },
     });
     return res.data;
   }
 
-  async listApiKeys(): Promise<{ keys: any[] }> {
+  async listApiKeys(): Promise<{ keys: APIKeyInfo[] }> {
     return withRetry(async () => {
-      const res = await this.client.get('/api/enterprise/keys');
+      const res = await this.client.get<{ keys: APIKeyInfo[] }>('/api/enterprise/keys');
       return res.data;
     });
   }
 
-  async revokeApiKey(keyId: number): Promise<any> {
-    const res = await this.client.delete(`/api/enterprise/keys/${keyId}`);
+  async revokeApiKey(keyId: number): Promise<{ message: string }> {
+    const res = await this.client.delete<{ message: string }>(`/api/enterprise/keys/${keyId}`);
     return res.data;
   }
 
-  async getApiKeyUsage(days?: number): Promise<any> {
+  async getApiKeyUsage(days?: number): Promise<Record<string, unknown>> {
     return withRetry(async () => {
-      const res = await this.client.get('/api/enterprise/usage', { params: { days } });
+      const res = await this.client.get<Record<string, unknown>>('/api/enterprise/usage', { params: { days } });
       return res.data;
     });
   }
 
-  async createWebhook(url: string, events?: string): Promise<any> {
-    const res = await this.client.post('/api/enterprise/webhooks', null, {
+  async createWebhook(url: string, events?: string): Promise<WebhookInfo> {
+    const res = await this.client.post<WebhookInfo>('/api/enterprise/webhooks', null, {
       params: { url, events },
     });
     return res.data;
   }
 
-  async listWebhooks(): Promise<{ webhooks: any[] }> {
-    const res = await this.client.get('/api/enterprise/webhooks');
+  async listWebhooks(): Promise<{ webhooks: WebhookInfo[] }> {
+    const res = await this.client.get<{ webhooks: WebhookInfo[] }>('/api/enterprise/webhooks');
     return res.data;
   }
 
   // ─── Disputes ────────────────────────────────────────────────────────────────
 
-  async getDisputes(limit = 50, status?: string): Promise<{ items: any[] }> {
-    const res = await this.client.get('/api/admin/disputes', { params: { limit, status } });
+  async getDisputes(limit = 50, status?: string): Promise<{ items: Dispute[] }> {
+    const res = await this.client.get<{ items: Dispute[] }>('/api/admin/disputes', { params: { limit, status } });
     return res.data;
   }
 
-  async resolveDispute(disputeId: number, resolution: string): Promise<any> {
-    const res = await this.client.put(`/api/admin/disputes/${disputeId}/resolve`, null, {
+  async resolveDispute(disputeId: number, resolution: string): Promise<{ message: string }> {
+    const res = await this.client.put<{ message: string }>(`/api/admin/disputes/${disputeId}/resolve`, null, {
       params: { resolution },
     });
     return res.data;
@@ -663,33 +674,33 @@ class VestraAPIClient {
 
   // ─── Monitoring ──────────────────────────────────────────────────────────
 
-  async getFullHealth(): Promise<any> {
+  async getFullHealth(): Promise<Record<string, unknown>> {
     return withRetry(async () => {
-      const res = await this.client.get('/api/monitoring/health/full');
+      const res = await this.client.get<Record<string, unknown>>('/api/monitoring/health/full');
       return res.data;
     });
   }
 
-  async getServicesStatus(): Promise<any> {
-    const res = await this.client.get('/api/monitoring/health/services');
+  async getServicesStatus(): Promise<Record<string, unknown>> {
+    const res = await this.client.get<Record<string, unknown>>('/api/monitoring/health/services');
     return res.data;
   }
 
-  async getResourceMetrics(): Promise<any> {
-    const res = await this.client.get('/api/monitoring/health/resources');
+  async getResourceMetrics(): Promise<Record<string, unknown>> {
+    const res = await this.client.get<Record<string, unknown>>('/api/monitoring/health/resources');
     return res.data;
   }
 
-  async getDatabaseMetrics(): Promise<any> {
+  async getDatabaseMetrics(): Promise<Record<string, unknown>> {
     return withRetry(async () => {
-      const res = await this.client.get('/api/monitoring/health/database');
+      const res = await this.client.get<Record<string, unknown>>('/api/monitoring/health/database');
       return res.data;
     });
   }
 
-  async getRedisMetrics(): Promise<any> {
+  async getRedisMetrics(): Promise<Record<string, unknown>> {
     return withRetry(async () => {
-      const res = await this.client.get('/api/monitoring/health/redis');
+      const res = await this.client.get<Record<string, unknown>>('/api/monitoring/health/redis');
       return res.data;
     });
   }
@@ -699,21 +710,21 @@ class VestraAPIClient {
   async createEscrow(data: {
     property_id: number; amount_kes: number; seller_id: number;
     agent_id?: number; deposit_amount_kes?: number; terms?: string;
-  }): Promise<any> {
-    const res = await this.client.post('/api/escrow', null, { params: data });
+  }): Promise<EscrowTransaction> {
+    const res = await this.client.post<EscrowTransaction>('/api/escrow', null, { params: data });
     return res.data;
   }
 
-  async getMyEscrows(limit = 20): Promise<{ items: any[] }> {
+  async getMyEscrows(limit = 20): Promise<{ items: EscrowTransaction[] }> {
     return withRetry(async () => {
-      const res = await this.client.get<{ items: any[] }>('/api/escrow/my', { params: { limit } });
+      const res = await this.client.get<{ items: EscrowTransaction[] }>('/api/escrow/my', { params: { limit } });
       return res.data;
     });
   }
 
-  async getEscrow(escrowId: number): Promise<any> {
+  async getEscrow(escrowId: number): Promise<EscrowTransaction> {
     return withRetry(async () => {
-      const res = await this.client.get<any>(`/api/escrow/${escrowId}`);
+      const res = await this.client.get<EscrowTransaction>(`/api/escrow/${escrowId}`);
       return res.data;
     });
   }
@@ -723,8 +734,8 @@ class VestraAPIClient {
   async fileDispute(data: {
     category: string; description: string; property_id?: number;
     subject_type?: string; subject_id?: number; evidence_urls?: string;
-  }): Promise<any> {
-    const res = await this.client.post('/api/disputes', null, { params: data });
+  }): Promise<Dispute> {
+    const res = await this.client.post<Dispute>('/api/disputes', null, { params: data });
     return res.data;
   }
 
@@ -733,15 +744,15 @@ class VestraAPIClient {
     return res.data;
   }
 
-  async getMyDisputes(limit = 50): Promise<{ items: any[] }> {
+  async getMyDisputes(limit = 50): Promise<{ items: Dispute[] }> {
     return withRetry(async () => {
-      const res = await this.client.get<{ items: any[] }>('/api/disputes/my', { params: { limit } });
+      const res = await this.client.get<{ items: Dispute[] }>('/api/disputes/my', { params: { limit } });
       return res.data;
     });
   }
 
-  async getDispute(disputeId: number): Promise<any> {
-    const res = await this.client.get<any>(`/api/disputes/${disputeId}`);
+  async getDispute(disputeId: number): Promise<Dispute> {
+    const res = await this.client.get<Dispute>(`/api/disputes/${disputeId}`);
     return res.data;
   }
 
@@ -750,62 +761,62 @@ class VestraAPIClient {
   async writeReview(data: {
     subject_id: number; rating: number; title?: string;
     body?: string; property_id?: number;
-  }): Promise<any> {
-    const res = await this.client.post('/api/reviews', null, { params: data });
+  }): Promise<Review> {
+    const res = await this.client.post<Review>('/api/reviews', null, { params: data });
     return res.data;
   }
 
-  async getSubjectReviews(subjectId: number, limit = 20): Promise<any> {
+  async getSubjectReviews(subjectId: number, limit = 20): Promise<SubjectReviews> {
     return withRetry(async () => {
-      const res = await this.client.get<any>(`/api/reviews/subject/${subjectId}`, { params: { limit } });
+      const res = await this.client.get<SubjectReviews>(`/api/reviews/subject/${subjectId}`, { params: { limit } });
       return res.data;
     });
   }
 
-  async getMyReviews(limit = 20): Promise<{ items: any[] }> {
+  async getMyReviews(limit = 20): Promise<{ items: Review[] }> {
     return withRetry(async () => {
-      const res = await this.client.get<{ items: any[] }>('/api/reviews/my', { params: { limit } });
+      const res = await this.client.get<{ items: Review[] }>('/api/reviews/my', { params: { limit } });
       return res.data;
     });
   }
 
-  async getPropertyReviewStats(propertyId: number): Promise<any> {
-    const res = await this.client.get<any>(`/api/reviews/property/${propertyId}`);
+  async getPropertyReviewStats(propertyId: number): Promise<Record<string, unknown>> {
+    const res = await this.client.get<Record<string, unknown>>(`/api/reviews/property/${propertyId}`);
     return res.data;
   }
 
-  async getTopAgents(limit = 10, minReviews = 3): Promise<any> {
-    const res = await this.client.get<any>('/api/reviews/top-agents', { params: { limit, min_reviews: minReviews } });
+  async getTopAgents(limit = 10, minReviews = 3): Promise<Record<string, unknown>> {
+    const res = await this.client.get<Record<string, unknown>>('/api/reviews/top-agents', { params: { limit, min_reviews: minReviews } });
     return res.data;
   }
 
   // ─── Payouts ───────────────────────────────────────────────────────────────
 
-  async requestPayout(amountKes: number, payoutType = 'commission', description?: string): Promise<any> {
-    const res = await this.client.post('/api/payouts/request', null, {
+  async requestPayout(amountKes: number, payoutType = 'commission', description?: string): Promise<Payout> {
+    const res = await this.client.post<Payout>('/api/payouts/request', null, {
       params: { amount_kes: amountKes, payout_type: payoutType, description },
     });
     return res.data;
   }
 
-  async getMyPayouts(limit = 50): Promise<{ items: any[] }> {
+  async getMyPayouts(limit = 50): Promise<{ items: Payout[] }> {
     return withRetry(async () => {
-      const res = await this.client.get<{ items: any[] }>('/api/payouts/my', { params: { limit } });
+      const res = await this.client.get<{ items: Payout[] }>('/api/payouts/my', { params: { limit } });
       return res.data;
     });
   }
 
   // ─── KYC ───────────────────────────────────────────────────────────────────
 
-  async getKycStatus(): Promise<any> {
+  async getKycStatus(): Promise<KYCVerification> {
     return withRetry(async () => {
-      const res = await this.client.get('/api/kyc/status');
+      const res = await this.client.get<KYCVerification>('/api/kyc/status');
       return res.data;
     });
   }
 
-  async submitKyc(formData: FormData): Promise<any> {
-    const res = await this.client.post('/api/kyc/submit', formData, {
+  async submitKyc(formData: FormData): Promise<KYCVerification> {
+    const res = await this.client.post<KYCVerification>('/api/kyc/submit', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return res.data;
@@ -813,8 +824,8 @@ class VestraAPIClient {
 
   // ─── Coupons ────────────────────────────────────────────────────────────────
 
-  async validateCoupon(code: string): Promise<any> {
-    const res = await this.client.get('/api/admin/coupons/validate', { params: { code } });
+  async validateCoupon(code: string): Promise<Record<string, unknown>> {
+    const res = await this.client.get<Record<string, unknown>>('/api/admin/coupons/validate', { params: { code } });
     return res.data;
   }
 }

@@ -1,27 +1,29 @@
-from datetime import timezone
+import contextlib
 import logging
+from datetime import UTC
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from typing import Optional
-from app.models.user import User, UserRole
+
+from app.core.hashing import get_password_hash, verify_password
 from app.models.property import AgentProfile
-from app.schemas.user import UserCreate, UserUpdate, AgentProfileCreate
-from app.core.security import get_password_hash, verify_password
+from app.models.user import User, UserRole
+from app.schemas.user import AgentProfileCreate, UserCreate, UserUpdate
 
 logger = logging.getLogger("vestra")
 
 
-async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
+async def get_user_by_id(db: AsyncSession, user_id: int) -> User | None:
     result = await db.execute(select(User).where(User.id == user_id))
     return result.scalar_one_or_none()
 
 
-async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
+async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
     result = await db.execute(select(User).where(User.email == email))
     return result.scalar_one_or_none()
 
 
-async def get_user_by_phone(db: AsyncSession, phone: str) -> Optional[User]:
+async def get_user_by_phone(db: AsyncSession, phone: str) -> User | None:
     result = await db.execute(select(User).where(User.phone == phone))
     return result.scalar_one_or_none()
 
@@ -29,7 +31,7 @@ async def get_user_by_phone(db: AsyncSession, phone: str) -> Optional[User]:
 async def create_user(
     db: AsyncSession,
     user_data: UserCreate,
-    referral_code: Optional[str] = None,
+    referral_code: str | None = None,
 ) -> User:
     hashed_password = await get_password_hash(user_data.password)
     user = User(
@@ -50,7 +52,7 @@ async def create_user(
 
     # ── Referral flow (if user was referred by someone) ─────────────────────────
     if referral_code:
-        from app.services.referral_engine import track_referral_signup, award_referral_reward
+        from app.services.referral_engine import award_referral_reward, track_referral_signup
 
         track_result = await track_referral_signup(db, user.id, referral_code)
         if track_result:
@@ -69,7 +71,7 @@ async def create_user(
     return user
 
 
-async def authenticate_user(db: AsyncSession, email: str, password: str) -> Optional[User]:
+async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
     user = await get_user_by_email(db, email)
     if not user or not await verify_password(password, user.hashed_password):
         return None
@@ -85,7 +87,7 @@ async def update_user(db: AsyncSession, user: User, update_data: UserUpdate) -> 
 
 
 async def get_or_create_agent_profile(
-    db: AsyncSession, user_id: int, data: Optional[AgentProfileCreate] = None
+    db: AsyncSession, user_id: int, data: AgentProfileCreate | None = None
 ) -> AgentProfile:
     result = await db.execute(
         select(AgentProfile).where(AgentProfile.user_id == user_id)
@@ -114,14 +116,12 @@ async def count_agents(db: AsyncSession) -> int:
 
 async def get_all_users(
     db: AsyncSession, skip: int = 0, limit: int = 50,
-    role: str = None, search: str = None,
+    role: str | None = None, search: str | None = None,
 ):
     query = select(User).order_by(User.created_at.desc())
     if role:
-        try:
+        with contextlib.suppress(ValueError):
             query = query.where(User.role == UserRole(role))
-        except ValueError:
-            pass
     if search:
         query = query.where(
             (User.email.ilike(f"%{search}%")) |
@@ -131,13 +131,11 @@ async def get_all_users(
     return result.scalars().all()
 
 
-async def count_users(db: AsyncSession, role: str = None) -> int:
+async def count_users(db: AsyncSession, role: str | None = None) -> int:
     query = select(func.count(User.id))
     if role:
-        try:
+        with contextlib.suppress(ValueError):
             query = query.where(User.role == UserRole(role))
-        except ValueError:
-            pass
     result = await db.execute(query)
     return result.scalar_one()
 
@@ -180,7 +178,7 @@ async def get_monthly_user_growth(db: AsyncSession) -> list:
     from datetime import datetime
 
     months = []
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     result = await db.execute(
         select(
             func.date_trunc('month', User.created_at).label('month'),

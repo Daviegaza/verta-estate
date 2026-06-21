@@ -46,7 +46,7 @@ export default function ForgotPasswordPage() {
           <Card className="p-8">
             <h1 className="text-xl font-bold text-gray-900 mb-2">Reset your password</h1>
             <p className="text-sm text-gray-500 mb-6">
-              Enter your email address and we'll send you a link to reset your password.
+              Enter your email address and we&apos;ll send you a link to reset your password.
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -84,7 +84,7 @@ export default function ForgotPasswordPage() {
             <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
             <h1 className="text-xl font-bold text-gray-900 mb-2">Check your email</h1>
             <p className="text-sm text-gray-500 mb-6">
-              If an account exists for {email}, we've sent a password reset link.
+              If an account exists for {email}, we&apos;ve sent a password reset link.
               Please check your inbox and spam folder.
             </p>
             <Link href="/auth/login">

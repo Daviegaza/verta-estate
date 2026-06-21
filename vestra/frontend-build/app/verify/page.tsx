@@ -217,7 +217,7 @@ export default function VerifyPage() {
               </Button>
             </form>
             <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-700">
-              <strong>Tip:</strong> You can find the Property ID on any listing page — it appears as "Property #ID" near the title.
+              <strong>Tip:</strong> You can find the Property ID on any listing page — it appears as &ldquo;Property #ID&rdquo; near the title.
             </div>
           </div>
         )}

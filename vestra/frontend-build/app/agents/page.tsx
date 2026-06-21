@@ -40,10 +40,6 @@ export default function AgentsPage() {
   const [search, setSearch] = useState('');
   const [city, setCity] = useState('');
 
-  useEffect(() => {
-    loadAgents();
-  }, []);
-
   const loadAgents = async () => {
     try {
       const res = await api.client.get('/api/admin/users', {
@@ -56,6 +52,10 @@ export default function AgentsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadAgents();
+  }, []);
 
   const filtered = agents.filter((a) => {
     const matchesSearch = !search ||

@@ -37,8 +37,6 @@ function BuyerContent() {
   const [recommendations, setRecommendations] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { loadData(); }, []);
-
   const loadData = async () => {
     setLoading(true);
     try {
@@ -54,6 +52,8 @@ function BuyerContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => { loadData(); }, []);
 
   if (loading) return (
     <div className="flex justify-center py-32"><Spinner size="lg" /></div>

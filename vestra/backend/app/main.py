@@ -7,22 +7,39 @@ structured logging, rate limiting, and comprehensive monitoring.
 """
 from __future__ import annotations
 
+# ── Custom JSON encoder — handles Decimal from PostgreSQL Numeric columns ──
+import json as _json
+import logging
 import os
 import time
-import logging
 from contextlib import asynccontextmanager
 from decimal import Decimal
 
 import sentry_sdk
-from fastapi import FastAPI, Request, HTTPException, WebSocket
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-# ── Custom JSON encoder — handles Decimal from PostgreSQL Numeric columns ──
-import json as _json
+from app.api import api_router, legacy_router
+from app.core.config import settings
+from app.core.csrf import CSRFMiddleware
+from app.core.database import AsyncSessionLocal, create_tables, engine
+from app.core.indexes import create_performance_indexes
+from app.core.metrics import metrics_endpoint, metrics_middleware
+from app.core.middleware import (
+    GzipCompressionMiddleware,
+    RateLimitMiddleware,
+    RequestLoggingMiddleware,
+    RequestSizeLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
+from app.core.redis import close_redis, get_redis
+from app.core.websocket import handle_ws
+
+logger = logging.getLogger("vestra")
 
 
 def _json_serializer(obj):
@@ -41,25 +58,6 @@ class DecimalAwareJSONResponse(JSONResponse):
             separators=(",", ":"),
             default=_json_serializer,
         ).encode("utf-8")
-
-from app.core.config import settings
-from app.core.database import create_tables, AsyncSessionLocal, engine
-from app.core.redis import get_redis, close_redis
-from app.core.metrics import metrics_endpoint, metrics_middleware
-from app.core.middleware import (
-    RateLimitMiddleware,
-    RequestLoggingMiddleware,
-    SecurityHeadersMiddleware,
-    GzipCompressionMiddleware,
-    RequestSizeLimitMiddleware,
-)
-from app.core.csrf import CSRFMiddleware
-from app.core.indexes import create_performance_indexes
-from app.core.websocket import handle_ws
-from app.api import api_router, legacy_router
-
-logger = logging.getLogger("vestra")
-
 
 # ── Lifespan ───────────────────────────────────────────────────────────────────
 
@@ -205,8 +203,7 @@ async def api_key_tracking_middleware(request: Request, call_next):
     try:
         from app.core.database import AsyncSessionLocal
         async with AsyncSessionLocal() as mid_db:
-            from app.services.api_key_service import validate_api_key, record_api_key_usage
-            from app.core.redis import get_redis
+            from app.services.api_key_service import record_api_key_usage, validate_api_key
 
             key = await validate_api_key(mid_db, api_key_header)
             if key:

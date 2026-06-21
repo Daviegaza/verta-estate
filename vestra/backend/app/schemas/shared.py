@@ -6,7 +6,8 @@ structure for errors, making client-side error handling predictable.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -14,14 +15,14 @@ class ErrorResponse(BaseModel):
     """Standard error envelope returned by all API endpoints."""
     error: str
     message: str
-    path: Optional[str] = None
-    correlation_id: Optional[str] = None
-    details: Optional[Any] = None
+    path: str | None = None
+    correlation_id: str | None = None
+    details: Any | None = None
 
 
 class SuccessResponse(BaseModel):
     """Standard success envelope for mutation endpoints."""
     success: bool = True
     message: str
-    data: Optional[Any] = None
-    correlation_id: Optional[str] = None
+    data: Any | None = None
+    correlation_id: str | None = None

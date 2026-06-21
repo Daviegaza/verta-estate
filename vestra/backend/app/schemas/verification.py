@@ -1,7 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional, List
 from datetime import datetime
-from app.models.document import VerificationStatus, DocumentType
+
+from pydantic import BaseModel
+
+from app.models.document import DocumentType, VerificationStatus
 
 
 class VerificationRequest(BaseModel):
@@ -11,18 +12,18 @@ class VerificationRequest(BaseModel):
 
 class VerificationResponse(BaseModel):
     id: int
-    property_id: Optional[int]
+    property_id: int | None
     status: VerificationStatus
-    fraud_risk_score: Optional[float]
-    trust_score: Optional[float]
-    price_reasonableness: Optional[str]
-    ownership_confidence: Optional[str]
-    ai_recommendation: Optional[str]
-    document_flags: List[str]
-    ai_summary: Optional[str]
-    report_url: Optional[str]
+    fraud_risk_score: float | None
+    trust_score: float | None
+    price_reasonableness: str | None
+    ownership_confidence: str | None
+    ai_recommendation: str | None
+    document_flags: list[str]
+    ai_summary: str | None
+    report_url: str | None
     created_at: datetime
-    updated_at: Optional[datetime]
+    updated_at: datetime | None
 
     class Config:
         from_attributes = True
@@ -30,10 +31,10 @@ class VerificationResponse(BaseModel):
 
 class DocumentUploadResponse(BaseModel):
     id: int
-    property_id: Optional[int]
+    property_id: int | None
     document_type: DocumentType
     file_name: str
-    file_size: Optional[int]
+    file_size: int | None
     is_verified: bool
     created_at: datetime
 
@@ -45,7 +46,7 @@ class MpesaPaymentRequest(BaseModel):
     phone_number: str
     amount: float
     purpose: str
-    reference_id: Optional[int] = None
+    reference_id: int | None = None
 
 
 class MpesaCallbackData(BaseModel):
@@ -59,8 +60,8 @@ class PaymentResponse(BaseModel):
     method: str
     purpose: str
     status: str
-    reference: Optional[str]
-    mpesa_checkout_request_id: Optional[str]
+    reference: str | None
+    mpesa_checkout_request_id: str | None
     created_at: datetime
 
     class Config:

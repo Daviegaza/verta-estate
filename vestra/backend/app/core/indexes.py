@@ -2,9 +2,10 @@
 Database index creation for production performance.
 Run once during startup to ensure all performance indexes exist.
 """
+import logging
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 
 logger = logging.getLogger("vestra")
 

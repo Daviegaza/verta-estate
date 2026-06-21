@@ -6,20 +6,23 @@ Sandbox and production modes via PAYPAL_ENV config.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import hmac
 import json
 import logging
-from decimal import Decimal
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import httpx
 
 from app.core.config import settings
 from app.services.payment_providers import (
-    PaymentProvider, PaymentRequest, PaymentResult, ProviderType,
+    PaymentProvider,
+    PaymentRequest,
+    PaymentResult,
+    ProviderType,
     register_provider,
 )
+
+if TYPE_CHECKING:
+    from decimal import Decimal
 
 logger = logging.getLogger("vestra")
 
@@ -51,7 +54,7 @@ async def _get_client() -> httpx.AsyncClient:
     return _client
 
 
-async def _get_access_token() -> Optional[str]:
+async def _get_access_token() -> str | None:
     """Get PayPal OAuth2 access token."""
     if not settings.PAYPAL_CLIENT_ID or not settings.PAYPAL_CLIENT_SECRET:
         return None
@@ -313,7 +316,7 @@ class PayPalProvider(PaymentProvider):
                 raw_response=raw_data,
             )
 
-    async def refund(self, transaction_id: str, amount: Optional[Decimal] = None) -> PaymentResult:
+    async def refund(self, transaction_id: str, amount: Decimal | None = None) -> PaymentResult:
         """Refund a PayPal capture."""
         token = await _get_access_token()
         if not token:
@@ -398,7 +401,7 @@ class PayPalProvider(PaymentProvider):
                 status=status_map.get(order_status, "unknown"),
                 raw_response=order,
             )
-        except httpx.HTTPStatusError as e:
+        except httpx.HTTPStatusError:
             return PaymentResult(
                 success=False,
                 provider=self.provider_type.value,

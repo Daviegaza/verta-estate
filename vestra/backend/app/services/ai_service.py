@@ -8,6 +8,7 @@ blocking the async event loop.
 
 import asyncio
 import logging
+
 from app.ai.engine import vestra_ai
 
 logger = logging.getLogger("vestra")
@@ -41,7 +42,7 @@ async def analyze_property_with_ai(
             "fraud_risk_score": 50,
             "trust_score": 50,
             "ai_recommendation": "review",
-            "ai_summary": f"AI analysis encountered an error. Manual review recommended.",
+            "ai_summary": "AI analysis encountered an error. Manual review recommended.",
             "document_flags": [],
             "error": str(e),
         }

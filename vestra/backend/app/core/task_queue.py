@@ -27,10 +27,12 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Callable, Coroutine, Optional
+from typing import TYPE_CHECKING, Any
 
-from app.core.config import settings
 from app.core.redis import get_redis
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
 
 logger = logging.getLogger("vestra.task_queue")
 
@@ -58,8 +60,8 @@ DEFAULT_TASK_CONFIG = (3, 1.0)  # (max_retries, base_backoff_s)
 async def enqueue(
     task_type: str,
     payload: dict[str, Any],
-    max_retries: Optional[int] = None,
-) -> Optional[str]:
+    max_retries: int | None = None,
+) -> str | None:
     """
     Enqueue a task onto the Redis Stream for durable processing.
 

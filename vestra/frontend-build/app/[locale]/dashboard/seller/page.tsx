@@ -34,8 +34,6 @@ function SellerContent() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { loadData(); }, []);
-
   const loadData = async () => {
     try {
       const [props, pays] = await Promise.all([
@@ -48,6 +46,8 @@ function SellerContent() {
       setLoading(false);
     }
   };
+
+  useEffect(() => { loadData(); }, []);
 
   const verifiedProps = useMemo(() => properties.filter(p => p.is_verified).length, [properties]);
   const totalViews = useMemo(() => properties.reduce((sum, p) => sum + (p.views || 0), 0), [properties]);

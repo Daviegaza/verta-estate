@@ -5,7 +5,7 @@ const isProd = process.env.NODE_ENV === 'production';
 
 const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 
-let nextConfig: NextConfig = {
+const nextConfig: NextConfig = {
   output: 'standalone',
   // React Compiler — ONLY in production. In dev it uses Babel and makes
   // hot reload painfully slow (Next.js 16 docs warn about this).

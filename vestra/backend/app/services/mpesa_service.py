@@ -1,9 +1,18 @@
-import httpx
+import asyncio
 import base64
 import logging
-import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+import httpx
+
 from app.core.config import settings
+from app.services.payment_providers import (
+    PaymentProvider,
+    PaymentRequest,
+    PaymentResult,
+    ProviderType,
+    register_provider,
+)
 
 logger = logging.getLogger("vestra")
 
@@ -50,7 +59,7 @@ async def get_mpesa_access_token() -> str:
     Get OAuth access token from Safaricom with caching.
     Token is valid for 1 hour; we cache for 59 minutes to be safe.
     """
-    now = datetime.now(timezone.utc).timestamp()
+    now = datetime.now(UTC).timestamp()
 
     # Return cached token if still valid
     if _token_cache["token"] and now < _token_cache["expires_at"]:
@@ -162,11 +171,6 @@ async def query_stk_status(checkout_request_id: str) -> dict:
 
 # ── Pluggable Provider Adapter ──────────────────────────────────────────────
 
-from decimal import Decimal
-from app.services.payment_providers import (
-    PaymentProvider, PaymentRequest, PaymentResult, ProviderType,
-)
-
 
 class MpesaKEProvider(PaymentProvider):
     """Safaricom M-Pesa Kenya provider implementing the PaymentProvider interface."""
@@ -249,7 +253,6 @@ class MpesaKEProvider(PaymentProvider):
 
 
 # Register as a payment provider
-from app.services.payment_providers import register_provider, ProviderType
 register_provider(ProviderType.mpesa_ke, MpesaKEProvider)
 
 
@@ -285,4 +288,4 @@ def parse_mpesa_callback(callback_data: dict) -> dict:
                 "merchant_request_id": merchant_request_id,
             }
     except (KeyError, TypeError) as e:
-        return {"success": False, "result_desc": f"Parse error: {str(e)}"}
+        return {"success": False, "result_desc": f"Parse error: {e!s}"}

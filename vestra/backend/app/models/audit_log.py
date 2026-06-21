@@ -3,8 +3,9 @@ Audit log model — tracks all state-changing operations for compliance & securi
 """
 from __future__ import annotations
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.sql import func
+
 from app.core.database import Base
 
 

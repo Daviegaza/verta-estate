@@ -1,11 +1,14 @@
 """Notification API routes."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.services.notification_service import (
-    get_user_notifications, mark_notification_read,
-    mark_all_read, count_unread,
+    count_unread,
+    get_user_notifications,
+    mark_all_read,
+    mark_notification_read,
 )
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])

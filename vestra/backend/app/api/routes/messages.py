@@ -1,12 +1,16 @@
 """Messaging API routes — buyer-seller-agent communication."""
-from fastapi import APIRouter, Depends, HTTPException, Query
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.services.messaging_service import (
-    send_message, get_conversation, get_inbox,
-    mark_message_read, count_unread_messages,
+    count_unread_messages,
+    get_conversation,
+    get_inbox,
+    mark_message_read,
+    send_message,
 )
 
 router = APIRouter(prefix="/messages", tags=["Messages"])
@@ -16,8 +20,8 @@ router = APIRouter(prefix="/messages", tags=["Messages"])
 async def send_message_endpoint(
     receiver_id: int,
     body: str,
-    property_id: Optional[int] = None,
-    subject: Optional[str] = None,
+    property_id: int | None = None,
+    subject: str | None = None,
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -54,7 +58,7 @@ async def inbox(
 @router.get("/conversation/{other_user_id}")
 async def conversation(
     other_user_id: int,
-    property_id: Optional[int] = None,
+    property_id: int | None = None,
     limit: int = 50,
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

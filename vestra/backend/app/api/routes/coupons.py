@@ -5,9 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_admin
+from app.core.security import get_current_admin, get_current_user
 from app.services.coupon_service import (
-    validate_coupon, apply_coupon, list_active_coupons,
+    apply_coupon,
+    list_active_coupons,
+    validate_coupon,
 )
 
 router = APIRouter(prefix="/coupons", tags=["Coupons"])
@@ -36,7 +38,7 @@ async def apply_coupon_code(
         result = await apply_coupon(db, code, current_user.id, amount)
         return result
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/admin/list")

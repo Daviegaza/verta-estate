@@ -1,7 +1,8 @@
 """Favorites & Saved Searches API routes."""
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.kyc_notification import SavedProperty, SavedSearch
@@ -43,6 +44,7 @@ async def list_favorites_enriched(
 ):
     """Get user's saved properties with full property details (for buyer dashboard)."""
     from sqlalchemy.orm import joinedload
+
     from app.models.property import Property
 
     result = await db.execute(
@@ -101,7 +103,7 @@ async def list_favorites_enriched(
 @router.post("/{property_id}")
 async def add_favorite(
     property_id: int,
-    notes: str = None,
+    notes: str | None = None,
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -179,7 +181,7 @@ async def list_saved_searches(
 @router.post("/searches")
 async def save_search(
     filters: dict,
-    name: str = None,
+    name: str | None = None,
     notify_email: bool = True,
     notify_whatsapp: bool = False,
     current_user=Depends(get_current_user),

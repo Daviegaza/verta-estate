@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from app.api.routes import admin, auth, payments, properties, verification
 from app.api.routes.ai_routes import router as ai_router
 from app.api.routes.coupons import router as coupons_router
+from app.api.routes.deep_research import router as deep_research_router
 from app.api.routes.currencies import router as currencies_router
 from app.api.routes.disputes import router as disputes_router
 from app.api.routes.enterprise import router as enterprise_router
@@ -62,6 +63,7 @@ def _include_all_routers(router: APIRouter) -> None:
     router.include_router(title_chain_router)
     router.include_router(trust_safety_router)
     router.include_router(referrals_router)
+    router.include_router(deep_research_router)
 
 
 # ── Canonical v1 Router ─────────────────────────────────────────────────────────

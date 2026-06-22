@@ -271,6 +271,60 @@ async def revoke_all_refresh_tokens(user_id: int) -> None:
     await cache_delete(f"vestra:refresh:{user_id}:*")
 
 
+# ── Redis Proxy (compatibility layer) ────────────────────────────────────────
+
+
+class RedisProxy:
+    """
+    Lazy proxy that forwards .get() / .set() / .delete() to the shared
+    Redis connection.  Returns None / swallows errors when Redis is down so
+    callers don't need to guard every call individually (they already wrap
+    in try/except).
+
+    This exists so modules that import `redis_client` from app.core.redis
+    continue to work without code changes.
+    """
+
+    async def get(self, key: str) -> str | None:
+        r = await get_redis()
+        if r is None:
+            return None
+        try:
+            return await r.get(key)
+        except Exception:
+            return None
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        r = await get_redis()
+        if r is None:
+            return
+        try:
+            await r.set(key, value, ex=ex)
+        except Exception:
+            pass
+
+    async def delete(self, *keys: str) -> None:
+        r = await get_redis()
+        if r is None:
+            return
+        try:
+            await r.delete(*keys)
+        except Exception:
+            pass
+
+    async def exists(self, key: str) -> bool:
+        r = await get_redis()
+        if r is None:
+            return False
+        try:
+            return await r.exists(key) > 0
+        except Exception:
+            return False
+
+
+redis_client = RedisProxy()
+
+
 # ── Deduplication (idempotency) ──────────────────────────────────────────────
 
 async def check_and_mark_processed(key: str, ttl: int = 86400) -> bool:

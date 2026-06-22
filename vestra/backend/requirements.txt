@@ -24,3 +24,13 @@ sentry-sdk[fastapi]==2.5.1
 pyotp==2.9.0
 qrcode==7.4.2
 cryptography==42.0.8
+psutil>=5.9.0                   # System monitoring
+# ── Deep Research ─────────────────────────────────────────
+anthropic>=0.39.0                # Claude API for deep analysis
+httpx>=0.27.0                    # Async HTTP (already above, pinned)
+sentence-transformers>=3.0.0     # Text embeddings for semantic search
+faiss-cpu>=1.8.0                # Vector similarity search
+numpy>=1.26.0                   # Numerical ops (faiss dependency)
+ddgs>=5.0.0                     # DuckDuckGo search (free web research)
+# Optional: for PDF export
+# weasyprint>=62.0

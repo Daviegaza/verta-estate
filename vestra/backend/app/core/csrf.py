@@ -6,11 +6,13 @@ Implements the Double-Submit Cookie pattern:
 - For state-changing methods (POST, PUT, PATCH, DELETE): validates the
   X-CSRF-Token header matches the cookie value.
 
-Skips validation for:
+Exemptions (pre-auth + webhooks):
+  - All /auth/* endpoints (login, register, OTP, password reset, 2FA)
+  - M-Pesa and Stripe webhook callbacks
   - API-key-authenticated requests (enterprise / internal)
-  - M-Pesa and Stripe webhook callbacks (signed via their own schemes)
-  - Requests without an origin (CLI tools, curl, etc.)
+  - Requests without an Origin header (CLI tools, mobile apps)
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,12 +32,30 @@ logger = logging.getLogger("vestra")
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 CSRF_COOKIE_NAME = "vestra_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
-CSRF_SKIP_PATHS = (
+
+# All auth endpoints are exempt — the user has no session yet, so there is
+# nothing for CSRF to protect.  CSRF only matters *after* authentication.
+AUTH_PATH_PREFIXES = (
+    "/api/auth/",
+    "/api/v1/auth/",
+)
+
+# Webhook endpoints use their own signing schemes (M-Pesa, Stripe).
+WEBHOOK_PATHS = (
     "/api/payments/mpesa/callback",
     "/api/v1/payments/mpesa/callback",
     "/api/stripe/webhook",
     "/api/v1/stripe/webhook",
 )
+
+
+def _is_csrf_exempt(path: str) -> bool:
+    """Return True if the path should skip CSRF validation."""
+    if any(path.startswith(p) for p in AUTH_PATH_PREFIXES):
+        return True
+    if path in WEBHOOK_PATHS:
+        return True
+    return False
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
@@ -45,8 +65,10 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if not settings.CSRF_ENABLED:
             return await call_next(request)
 
-        # ── Skip CSRF for webhook callbacks ───────────────────────────────
-        if any(request.url.path.endswith(skip) for skip in CSRF_SKIP_PATHS):
+        path = request.url.path
+
+        # ── Skip CSRF for auth endpoints and webhook callbacks ──────────────
+        if _is_csrf_exempt(path):
             return await call_next(request)
 
         # ── Skip CSRF for API-key-authenticated requests ───────────────────

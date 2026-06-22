@@ -114,6 +114,16 @@ class Settings(BaseSettings):
     SESSION_IDLE_TIMEOUT_MINUTES: int = 30  # Auto-logout after inactivity
     MAX_CONCURRENT_SESSIONS: int = 5
 
+    # ── Deep Research ───────────────────────────────────────────────────────
+    DEEP_RESEARCH_LLM_PROVIDER: str = ""  # anthropic | openai | compatible
+    DEEP_RESEARCH_LLM_API_KEY: str = ""
+    DEEP_RESEARCH_LLM_MODEL: str = ""  # defaults to claude-sonnet-4-6 for anthropic
+    DEEP_RESEARCH_LLM_BASE_URL: str = ""  # for OpenAI-compatible APIs
+    DEEP_RESEARCH_SERPAPI_KEY: str = ""  # optional, for deeper web search
+    DEEP_RESEARCH_VECTOR_STORE_DIR: str = "./data/vectors"
+    DEEP_RESEARCH_REPORTS_DIR: str = "./reports"
+    DEEP_RESEARCH_ENABLED: bool = True
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",")]

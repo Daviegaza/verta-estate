@@ -12,6 +12,14 @@ import { Smartphone, ArrowLeft, ArrowRight, Check, ShieldCheck, Sparkles, Mail, 
 type Tab = 'phone' | 'email';
 type Step = 'phone' | 'otp' | 'name' | 'email-form';
 
+function apiErrorMessage(err: any, fallback: string): string {
+  const detail = err?.response?.data?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'object' && detail.message) return detail.message;
+  if (typeof detail === 'string') return detail;
+  return fallback;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { login, isLoading } = useAuthStore();
@@ -42,6 +50,11 @@ export default function LoginPage() {
     { role: 'Seller', email: 'peter.omondi@email.com', password: 'demo1234', color: 'bg-amber-50 border-amber-200 text-amber-800' },
   ];
 
+  // Seed the CSRF cookie on mount so post-login requests have it
+  useEffect(() => {
+    api.client.get('/api/auth/me').catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (countdown > 0) {
       const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
@@ -66,7 +79,7 @@ export default function LoginPage() {
       await api.client.post('/api/auth/send-otp', { phone });
       setStep('otp'); setCountdown(60);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to send code. Try again.');
+      setError(apiErrorMessage(err, 'Failed to send code. Try again.'));
     } finally { setLoading(false); }
   };
 
@@ -87,7 +100,7 @@ export default function LoginPage() {
         router.push(params.get('redirect') || '/dashboard');
       }
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Invalid code. Try again.');
+      setError(apiErrorMessage(err, 'Invalid code. Try again.'));
     } finally { setLoading(false); }
   };
 
@@ -106,7 +119,7 @@ export default function LoginPage() {
       const params = new URLSearchParams(window.location.search);
       router.push(params.get('redirect') || '/dashboard');
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Invalid email or password');
+      setError(apiErrorMessage(err, 'Invalid email or password'));
     }
   };
 
